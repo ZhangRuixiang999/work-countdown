@@ -681,10 +681,15 @@
 
   /* ---------- 迷你模式：缩成小窗贴右下角 ---------- */
 
-  .mini-restore {
+  .mini-ops {
     display: none;
     position: absolute;
     top: 10px; right: 10px;
+    gap: 4px;
+    z-index: 5;
+  }
+  body.mini .mini-ops { display: inline-flex; }
+  .mini-restore {
     appearance: none;
     width: 34px; height: 30px;
     align-items: center; justify-content: center;
@@ -694,7 +699,6 @@
     color: var(--muted);
     font-size: 15px; line-height: 1;
     cursor: pointer;
-    z-index: 5;
     transition: color 0.16s ease, background 0.16s ease;
   }
   .mini-restore:hover { color: var(--text); background: var(--fill2); }
@@ -755,7 +759,6 @@
   body.mini .progress,
   body.mini .progress-meta { display: none; }
   body.mini .shift-line { display: none; }
-  body.mini .mini-restore { display: inline-flex; }
   body.mini .mini-overall {
     display: flex;
     align-items: center;
@@ -1016,7 +1019,10 @@
   </header>
 
   <section class="card hero">
-    <button class="mini-restore" id="miniRestore" type="button" title="退出迷你模式" aria-label="退出迷你模式">✕</button>
+    <div class="mini-ops" id="miniOps">
+      <button class="mini-restore" id="miniPip" type="button" title="弹出屏幕悬浮小窗（画中画，置于所有窗口之上）" aria-label="屏幕画中画小窗">⛶</button>
+      <button class="mini-restore" id="miniRestore" type="button" title="退出迷你模式" aria-label="退出迷你模式">✕</button>
+    </div>
     <div class="hero-left">
       <div class="status" id="statusPill"><span class="dot"></span><span id="statusText">上班中</span></div>
 
@@ -2746,6 +2752,67 @@
     b.title = "迷你模式：缩成小窗放角落";
   });
 
+  /* 屏幕画中画：把倒计时弹出成系统级悬浮小窗 */
+  var PIP_CSS =
+    "html,body{margin:0;background:#0d1016;color:#e9edf5;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;}" +
+    "body{display:flex;align-items:center;justify-content:center;min-height:100vh;}" +
+    ".pip{width:100%;box-sizing:border-box;padding:13px 15px;}" +
+    ".pip-head{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#8b93a7;margin-bottom:2px;}" +
+    ".pip-status{color:#3ddc97;}" +
+    ".pip-label{font-size:11.5px;color:#8b93a7;}" +
+    ".pip-time{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:31px;font-weight:600;line-height:1.15;letter-spacing:1px;margin-top:2px;background:linear-gradient(180deg,#fff 10%,#b9c4d6 100%);-webkit-background-clip:text;background-clip:text;color:transparent;}" +
+    ".pip-meta{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:12px;color:#8b93a7;}" +
+    ".pip-pct{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:650;color:#3ddc97;}" +
+    ".pip-track{flex:1;height:5px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;font-style:normal;}" +
+    ".pip-fill{display:block;height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#2fbf85,#3ddc97 55%,#a9f4cf);font-style:normal;}";
+
+  var pipWin = null;
+  var pipEls = null;
+
+  function syncPip() {
+    if (!pipWin || !pipEls) return;
+    pipEls.time.textContent = $("countdown").textContent;
+    pipEls.status.textContent = $("statusText").textContent;
+    pipEls.label.textContent = $("countdownLabel").textContent;
+    pipEls.pct.textContent = $("overallPct").textContent + "%";
+    pipEls.fill.style.width = $("progressBar").style.width || "0%";
+  }
+
+  $("miniPip").addEventListener("click", function () {
+    if (!("documentPictureInPicture" in window)) {
+      toast("屏幕悬浮小窗需要 Chrome / Edge 浏览器（Safari 不支持）", "⛶", true);
+      return;
+    }
+    documentPictureInPicture.requestWindow({ width: 264, height: 172 }).then(function (w) {
+      pipWin = w;
+      w.document.title = "牛马续航";
+      var st = w.document.createElement("style");
+      st.textContent = PIP_CSS;
+      w.document.head.appendChild(st);
+      w.document.body.innerHTML =
+        '<div class="pip">' +
+        '<div class="pip-head"><span class="pip-status" id="pipStatus">上班中</span><span>牛马续航</span></div>' +
+        '<div class="pip-label" id="pipLabel">距离下班还有</div>' +
+        '<div class="pip-time" id="pipTime">00:00:00</div>' +
+        '<div class="pip-meta"><span>今日进度</span><span class="pip-pct" id="pipPct">0%</span><i class="pip-track"><em class="pip-fill" id="pipFill"></em></i></div>' +
+        "</div>";
+      pipEls = {
+        time: w.document.getElementById("pipTime"),
+        status: w.document.getElementById("pipStatus"),
+        label: w.document.getElementById("pipLabel"),
+        pct: w.document.getElementById("pipPct"),
+        fill: w.document.getElementById("pipFill")
+      };
+      syncPip();
+      w.addEventListener("pagehide", function () {
+        pipWin = null;
+        pipEls = null;
+      });
+      document.body.classList.remove("mini");
+      toast("画中画小窗已弹出，拖到屏幕任意位置，始终浮在最上层", "⛶", true);
+    }).catch(function () { pipWin = null; });
+  });
+
   /* 勿扰模式：关掉所有提示和声音 */
   function updateDndControl() {
     $("dndIcon").textContent = cfg.dnd ? "🔕" : "🔔";
@@ -2951,6 +3018,7 @@
     renderWish();
     renderEvent();
     renderReview();
+    syncPip();
   }
 
   function start() {
