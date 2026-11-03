@@ -678,6 +678,55 @@
   }
   .icon-btn:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.22); }
 
+  /* ---------- 迷你模式：缩成小窗贴右下角 ---------- */
+
+  .mini-restore {
+    display: none;
+    position: absolute;
+    top: 10px; right: 10px;
+    appearance: none;
+    width: 34px; height: 30px;
+    align-items: center; justify-content: center;
+    border: 0;
+    border-radius: 9px;
+    background: var(--fill);
+    color: var(--muted);
+    font-size: 15px; line-height: 1;
+    cursor: pointer;
+    z-index: 5;
+    transition: color 0.16s ease, background 0.16s ease;
+  }
+  .mini-restore:hover { color: var(--text); background: var(--fill2); }
+
+  body.mini .app {
+    position: fixed;
+    right: 16px; bottom: 16px;
+    width: 250px;
+    margin: 0;
+    z-index: 60;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.65);
+  }
+  body.mini header { display: none; }
+  body.mini .hero {
+    display: block;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+  body.mini .hero-left { padding: 12px 14px 13px; }
+  body.mini .hero-right { display: none; }
+  body.mini .habits { display: none; }
+  body.mini .countdown-label { margin-top: 11px; font-size: 11.5px; letter-spacing: 0.3px; }
+  body.mini .countdown { font-size: 35px; margin-top: 4px; line-height: 1.05; letter-spacing: 0.5px; }
+  body.mini .progress { margin-top: 10px; height: 7px; }
+  body.mini .progress-meta { font-size: 11px; }
+  body.mini .shift-line { display: none; }
+  body.mini .mini-restore { display: inline-flex; }
+  body.mini .status { margin-bottom: 0; }
+
   .drawer-mask {
     position: fixed;
     inset: 0;
@@ -916,6 +965,7 @@
     <button class="icon-btn" id="themeToggle" title="切换深色 / 浅色" aria-label="切换主题">
       <span id="themeIcon" style="font-size:15px; line-height:1;">🌙</span>
     </button>
+    <button class="icon-btn" id="miniToggle" title="迷你模式：缩成小窗放角落" aria-label="迷你模式">📌</button>
     <button class="icon-btn" id="settingsToggle" title="设置" aria-label="设置">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="12" cy="12" r="3"></circle>
@@ -925,6 +975,7 @@
   </header>
 
   <section class="card hero">
+    <button class="mini-restore" id="miniRestore" type="button" title="退出迷你模式" aria-label="退出迷你模式">✕</button>
     <div class="hero-left">
       <div class="status" id="statusPill"><span class="dot"></span><span id="statusText">上班中</span></div>
 
@@ -2627,6 +2678,21 @@
   }
 
   $("exportReport").addEventListener("click", exportReport);
+
+  /* 迷你模式：缩成小窗贴角落 */
+  $("miniToggle").addEventListener("click", function () {
+    var on = document.body.classList.toggle("mini");
+    var label = on ? "退出迷你模式" : "迷你模式";
+    this.setAttribute("aria-label", label);
+    this.title = on ? "回到完整页面" : "迷你模式：缩成小窗放角落";
+    if (on) toast("已缩成小窗，点卡片右上角的 ✕ 还原", "📌");
+  });
+  $("miniRestore").addEventListener("click", function () {
+    document.body.classList.remove("mini");
+    var b = $("miniToggle");
+    b.setAttribute("aria-label", "迷你模式");
+    b.title = "迷你模式：缩成小窗放角落";
+  });
 
   $("meritAdd").addEventListener("click", function () {
     today.merit += 1;
