@@ -702,6 +702,7 @@
     transition: color 0.16s ease, background 0.16s ease;
   }
   .mini-restore:hover { color: var(--text); background: var(--fill2); }
+  .mini-restore.pip-on { color: var(--green); background: var(--green-soft); }
 
   .mini-overall { display: none; }
   .mo-label { flex: none; }
@@ -2778,6 +2779,15 @@
   }
 
   $("miniPip").addEventListener("click", function () {
+    if (pipWin) {
+      try { pipWin.close(); } catch (e) {}
+      pipWin = null;
+      pipEls = null;
+      $("miniPip").classList.remove("pip-on");
+      try { sessionStorage.removeItem("niuxu-pip-open"); } catch (e) {}
+      toast("画中画小窗已关闭", "⛶", true);
+      return;
+    }
     if (!("documentPictureInPicture" in window)) {
       toast("屏幕悬浮小窗需要 Chrome / Edge 浏览器（Safari 不支持）", "⛶", true);
       return;
@@ -2803,9 +2813,12 @@
         fill: w.document.getElementById("pipFill")
       };
       syncPip();
+      $("miniPip").classList.add("pip-on");
+      try { sessionStorage.setItem("niuxu-pip-open", "1"); } catch (e) {}
       w.addEventListener("pagehide", function () {
         pipWin = null;
         pipEls = null;
+        $("miniPip").classList.remove("pip-on");
       });
       document.body.classList.remove("mini");
       toast("画中画小窗已弹出，拖到屏幕任意位置，始终浮在最上层", "⛶", true);
@@ -3022,6 +3035,15 @@
 
   function start() {
     fillForm();
+    // 上次开着画中画、因刷新被浏览器关掉时，提示怎么重新打开
+    try {
+      if (sessionStorage.getItem("niuxu-pip-open") === "1") {
+        sessionStorage.removeItem("niuxu-pip-open");
+        setTimeout(function () {
+          toast("画中画小窗已关闭（刷新页面会关掉它），需要的话点卡片上的 ⛶ 重新打开", "⛶", true);
+        }, 1500);
+      }
+    } catch (e) {}
     var autoFilled = false;
     if (!cfg.clockIn) {
       $("clockIn").value = nowTimeString();
