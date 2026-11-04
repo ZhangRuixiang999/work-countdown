@@ -51,6 +51,27 @@
   h1 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: 0.4px; }
   .sub { margin: 0; font-size: 13px; color: var(--muted); }
 
+  .merit-chip {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    align-self: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border: 1px solid rgba(61, 220, 151, 0.25);
+    border-radius: 999px;
+    background: var(--green-soft);
+    color: var(--green);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.16s ease, transform 0.1s ease;
+  }
+  .merit-chip:hover { background: rgba(61, 220, 151, 0.2); }
+  .merit-chip:active { transform: scale(0.95); }
+  .merit-chip b { font-weight: 700; font-variant-numeric: tabular-nums; }
+
   .card {
     position: relative;
     background: var(--card);
@@ -1002,6 +1023,7 @@
 <div class="app">
   <header>
     <h1>牛马续航（窝囊版）</h1>
+    <button class="merit-chip" id="meritTopBtn" type="button" title="攒功德 +1">🧘 <b id="meritTop">0</b></button>
     <p class="sub" id="dateLabel"></p>
     <span class="hdr-spacer" aria-hidden="true"></span>
     <button class="icon-btn" id="themeToggle" title="切换深色 / 浅色" aria-label="切换主题">
@@ -1105,18 +1127,6 @@
       <button class="mini-btn" id="standReset">起身活动了</button>
     </article>
 
-    <article class="card mini" data-kind="coffee" id="coffeeCard">
-      <div class="mini-head">
-        <span class="mini-icon">☕</span>
-        <span class="mini-title">咖啡续命</span>
-        <span class="mini-timer" id="coffeeTimer">目标 1 杯</span>
-      </div>
-      <div class="mini-value"><span id="coffeeCups">0</span><span class="unit">杯</span></div>
-      <div class="mini-sub" id="coffeeMg">咖啡因约 0 mg / 400 mg</div>
-      <div class="mini-bar"><div id="coffeeBar"></div></div>
-      <button class="mini-btn" id="coffeeAdd" type="button">再来一杯 +1</button>
-    </article>
-
     <article class="card mini" data-kind="toilet" id="toiletCard">
       <div class="mini-head">
         <span class="mini-icon">🚽</span>
@@ -1127,6 +1137,18 @@
       <div class="mini-sub" id="toiletSub">今日带薪摸鱼 0 分钟</div>
       <div class="mini-bar"><div id="toiletBar"></div></div>
       <button class="mini-btn" id="toiletAdd">去拉一会儿 +1</button>
+    </article>
+
+    <article class="card mini" data-kind="coffee" id="coffeeCard">
+      <div class="mini-head">
+        <span class="mini-icon">☕</span>
+        <span class="mini-title">咖啡续命</span>
+        <span class="mini-timer" id="coffeeTimer">目标 0 杯</span>
+      </div>
+      <div class="mini-value"><span id="coffeeCups">0</span><span class="unit">杯</span></div>
+      <div class="mini-sub" id="coffeeMg">咖啡因约 0 mg / 400 mg</div>
+      <div class="mini-bar"><div id="coffeeBar"></div></div>
+      <button class="mini-btn" id="coffeeAdd" type="button">再来一杯 +1</button>
     </article>
   </section>
 
@@ -1350,7 +1372,7 @@
       </div>
       <div class="field">
         <label for="coffeeGoal">咖啡目标（杯）</label>
-        <input id="coffeeGoal" type="number" min="1" max="10" step="1" inputmode="numeric" />
+        <input id="coffeeGoal" type="number" min="0" max="10" step="1" inputmode="numeric" />
       </div>
     </section>
 
@@ -1513,7 +1535,7 @@
     waterGoalMl: 2000,
     standGoal: 6,
     toiletGoal: 2,
-    coffeeGoal: 1,
+    coffeeGoal: 0,
     waterInterval: 30,
     standInterval: 45,
     toiletInterval: 90,
@@ -2369,7 +2391,7 @@
     $("coffeeBar").style.width = clamp((caffeine / COFFEE_LIMIT_MG) * 100, 0, 100).toFixed(1) + "%";
     $("coffeeBar").style.background = caffeine > COFFEE_LIMIT_MG
       ? "linear-gradient(90deg,#e06a6a,#ff9b9b)" : "";
-    $("coffeeTimer").textContent = "目标 " + Math.max(1, cfg.coffeeGoal) + " 杯";
+    $("coffeeTimer").textContent = cfg.coffeeGoal > 0 ? "目标 " + cfg.coffeeGoal + " 杯" : "没设目标";
 
     $("toiletCount").textContent = today.toiletCount;
     $("toiletSub").textContent = "今日带薪摸鱼 " + (today.toiletCount * TOILET_MINUTES) + " 分钟";
@@ -2378,6 +2400,7 @@
 
     // 今日功德
     $("meritCount").textContent = today.merit;
+    $("meritTop").textContent = today.merit;
     $("meritSub").textContent = today.merit === 0
       ? "今天还没攒功德"
       : today.merit < 10
@@ -2425,9 +2448,11 @@
     // 综合完成度
     var pWater = clamp(waterMl / waterGoal, 0, 1);
     var pStand = clamp(today.standCount / Math.max(1, cfg.standGoal), 0, 1);
-    var pCoffee = clamp(totalDrinkCups() / Math.max(1, cfg.coffeeGoal), 0, 1);
+    var pCoffee = cfg.coffeeGoal > 0 ? clamp(totalDrinkCups() / cfg.coffeeGoal, 0, 1) : 0;
     var pToilet = clamp(today.toiletCount / Math.max(1, cfg.toiletGoal), 0, 1);
-    var overall = (pWater + pStand + pCoffee + pToilet) / 4;
+    var parts = [pWater, pStand, pToilet];
+    if (cfg.coffeeGoal > 0) parts.push(pCoffee);
+    var overall = parts.reduce(function (a, b) { return a + b; }, 0) / parts.length;
 
     $("overallPct").textContent = Math.round(overall * 100);
     $("miniOverallPct").textContent = Math.round(overall * 100);
@@ -2736,10 +2761,11 @@
     var cups = totalDrinkCups();
     var moodEntries = todayMoodEntries();
     var latestEntry = moodEntries.length ? moodEntries[moodEntries.length - 1] : null;
-    var overall = (clamp(waterMl / waterGoal, 0, 1)
-      + clamp(today.standCount / Math.max(1, cfg.standGoal), 0, 1)
-      + clamp(cups / Math.max(1, cfg.coffeeGoal), 0, 1)
-      + clamp(today.toiletCount / Math.max(1, cfg.toiletGoal), 0, 1)) / 4;
+    var parts = [clamp(waterMl / waterGoal, 0, 1),
+      clamp(today.standCount / Math.max(1, cfg.standGoal), 0, 1),
+      clamp(today.toiletCount / Math.max(1, cfg.toiletGoal), 0, 1)];
+    if (cfg.coffeeGoal > 0) parts.push(clamp(cups / cfg.coffeeGoal, 0, 1));
+    var overall = parts.reduce(function (a, b) { return a + b; }, 0) / parts.length;
 
     var lines = [];
     lines.push("牛马续航日报 · " + dateStr);
@@ -2982,6 +3008,7 @@
     playSound("muyu");
   }
   $("meritAdd").addEventListener("click", doMerit);
+  $("meritTopBtn").addEventListener("click", doMerit);
 
   function doToilet() {
     today.toiletCount += 1;
