@@ -2861,6 +2861,16 @@
     ".pip-pct{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:650;color:#3ddc97;}" +
     ".pip-track{flex:1;height:5px;border-radius:999px;background:rgba(255,255,255,.14);overflow:hidden;font-style:normal;}" +
     ".pip-fill{display:block;height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#2fbf85,#3ddc97 55%,#a9f4cf);font-style:normal;}" +
+    ".pip-mini{display:none;align-items:center;gap:7px;}" +
+    ".pip.compact .pip-full{display:none;}" +
+    ".pip.compact .pip-mini{display:flex;}" +
+    ".pip.compact{padding:9px 11px;justify-content:center;}" +
+    ".pip-dot{width:7px;height:7px;border-radius:50%;background:#3ddc97;flex:none;box-shadow:0 0 7px rgba(61,220,151,.85);}" +
+    ".pip-mini-time{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:16px;font-weight:600;letter-spacing:.6px;color:#e9edf5;}" +
+    ".pip-mini-pct{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;font-weight:650;color:#3ddc97;}" +
+    ".pip-mini .pip-btn{width:20px;height:18px;font-size:11px;margin-left:auto;}" +
+    ".pip.compact .pip-remind{left:3px;right:3px;top:3px;bottom:3px;padding:3px 6px;gap:4px;border-radius:9px;font-size:10.5px;background:rgba(14,58,42,.96);}" +
+    ".pip.compact .pip-remind-btn{padding:2px 5px;font-size:9.5px;}" +
     ".pip-remind{position:absolute;left:9px;right:9px;bottom:8px;display:none;align-items:center;gap:5px;padding:6px 8px;border-radius:10px;background:rgba(61,220,151,.2);border:1px solid rgba(61,220,151,.45);font-size:11.5px;backdrop-filter:blur(6px);}" +
     ".pip-remind.show{display:flex;}" +
     ".pip-remind-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e9edf5;}" +
@@ -2874,6 +2884,26 @@
   var pipEls = null;
   var pipRemindType = null;
   var pipFlashTimer = null;
+  var PIP_W = 264, PIP_H = 200;
+  var PIP_CW = 232, PIP_CH = 56;
+
+  function applyPipCompact() {
+    if (!pipWin) return;
+    var root = pipWin.document.getElementById("pipRoot");
+    if (root) root.classList.toggle("compact", !!cfg.pipCompact);
+  }
+
+  function setPipCompact(on) {
+    if (!pipWin) return;
+    cfg.pipCompact = !!on;
+    saveConfig();
+    applyPipCompact();
+    syncPip();
+    try {
+      if (cfg.pipCompact) pipWin.resizeTo(PIP_CW, PIP_CH);
+      else pipWin.resizeTo(PIP_W, PIP_H);
+    } catch (e) {}
+  }
 
   function syncPip() {
     if (!pipWin || !pipEls) return;
@@ -2883,6 +2913,8 @@
     pipEls.pct.textContent = $("overallPct").textContent + "%";
     pipEls.fill.style.width = $("progressBar").style.width || "0%";
     pipEls.dnd.textContent = cfg.dnd ? "🔕" : "🔔";
+    if (pipEls.miniTime) pipEls.miniTime.textContent = $("countdown").textContent;
+    if (pipEls.miniPct) pipEls.miniPct.textContent = $("overallPct").textContent + "%";
   }
 
   function applyPipBg() {
@@ -2939,7 +2971,10 @@
       toast("屏幕悬浮小窗需要 Chrome / Edge 浏览器（Safari 不支持）", "⛶", true);
       return;
     }
-    documentPictureInPicture.requestWindow({ width: 264, height: 200 }).then(function (w) {
+    documentPictureInPicture.requestWindow({
+      width: cfg.pipCompact ? PIP_CW : PIP_W,
+      height: cfg.pipCompact ? PIP_CH : PIP_H
+    }).then(function (w) {
       pipWin = w;
       w.document.title = "牛马续航";
       var st = w.document.createElement("style");
@@ -2947,11 +2982,13 @@
       w.document.head.appendChild(st);
       var pd = w.document;
       pd.body.innerHTML =
-        '<div class="pip">' +
+        '<div class="pip" id="pipRoot">' +
+        '<div class="pip-full">' +
         '<div class="pip-top">' +
         '<span class="pip-status" id="pipStatus">上班中</span>' +
         '<span class="pip-name">牛马续航</span>' +
         '<span class="pip-actions">' +
+        '<button class="pip-btn" id="pipCollapse" title="收起成小条">▭</button>' +
         '<button class="pip-btn" id="pipDnd" title="勿扰模式">🔔</button>' +
         '<button class="pip-btn" id="pipMerit" title="攒功德 +1">🧘</button>' +
         "</span>" +
@@ -2959,9 +2996,22 @@
         '<div class="pip-label" id="pipLabel">距离下班还有</div>' +
         '<div class="pip-time" id="pipTime">00:00:00</div>' +
         '<div class="pip-meta"><span>今日进度</span><span class="pip-pct" id="pipPct">0%</span><i class="pip-track"><em class="pip-fill" id="pipFill"></em></i></div>' +
+        "</div>" +
+        '<div class="pip-mini">' +
+        '<span class="pip-dot"></span>' +
+        '<span class="pip-mini-time" id="pipMiniTime">00:00:00</span>' +
+        '<span class="pip-mini-pct" id="pipMiniPct">0%</span>' +
+        '<button class="pip-btn" id="pipExpand" title="展开">⤢</button>' +
+        "</div>" +
         '<div class="pip-remind" id="pipRemind"><span class="pip-remind-text"><span id="pipRemindIcon">💧</span><span id="pipRemindText"></span></span><button class="pip-remind-btn" id="pipRemindDone">已完成</button><button class="pip-remind-btn skip" id="pipRemindSkip">忽略</button></div>' +
         '<div class="pip-flash" id="pipFlash"></div>' +
         "</div>";
+      pd.getElementById("pipCollapse").addEventListener("click", function () {
+        setPipCompact(true);
+      });
+      pd.getElementById("pipExpand").addEventListener("click", function () {
+        setPipCompact(false);
+      });
       pd.getElementById("pipDnd").addEventListener("click", function () {
         cfg.dnd = !cfg.dnd;
         saveConfig();
@@ -2987,9 +3037,12 @@
         label: pd.getElementById("pipLabel"),
         pct: pd.getElementById("pipPct"),
         fill: pd.getElementById("pipFill"),
-        dnd: pd.getElementById("pipDnd")
+        dnd: pd.getElementById("pipDnd"),
+        miniTime: pd.getElementById("pipMiniTime"),
+        miniPct: pd.getElementById("pipMiniPct")
       };
       applyPipBg();
+      applyPipCompact();
       syncPip();
       $("miniPip").classList.add("pip-on");
       try { sessionStorage.setItem("niuxu-pip-open", "1"); } catch (e) {}
@@ -2999,7 +3052,7 @@
         $("miniPip").classList.remove("pip-on");
       });
       document.body.classList.remove("mini");
-      toast("画中画小窗已弹出，拖到屏幕任意位置，始终浮在最上层", "⛶", true);
+      toast("画中画小窗已弹出，点 ▭ 可收起成小条，拖到屏幕边缘即可", "⛶", true);
     }).catch(function () { pipWin = null; });
   });
 
