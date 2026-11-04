@@ -93,6 +93,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         )
         server.start()
 
+        // 第一次装上时如果一直没同步，就自动把网页打开（只做一次）
+        Timer.scheduledTimer(withTimeInterval: 6.0, repeats: false) { [weak self] _ in
+            guard let self = self, !self.hasState else { return }
+            let key = "autoOpenedWebPage"
+            guard !UserDefaults.standard.bool(forKey: key) else { return }
+            UserDefaults.standard.set(true, forKey: key)
+            self.openWebApp()
+        }
+
         window.orderFrontRegardless()
     }
 
@@ -258,7 +267,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         effect.frame = card.bounds
         webView.frame = card.bounds
         dragView.frame = card.bounds
-        updateDragArea(alert: alerting)
+        updateDragArea()
     }
 
     private func applyState(_ state: [String: Any]) {
@@ -290,16 +299,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
         if !showAlert { state.removeValue(forKey: "alert") }
 
-        alerting = showAlert
-        updateDragArea(alert: showAlert)
-        if showAlert && clickThrough { setClickThrough(false) }
-
-        guard let data = try? JSONSerialization.data(withJSONObject: state, options: []),
-              let json = String(data: data, encoding: .utf8) else { return }
         if !hasState {
             hasState = true
             syncStatusItem.title = "已连接浏览器同步"
         }
+        alerting = showAlert
+        updateDragArea()
+        if showAlert && clickThrough { setClickThrough(false) }
+
+        guard let data = try? JSONSerialization.data(withJSONObject: state, options: []),
+              let json = String(data: data, encoding: .utf8) else { return }
         if webView.isLoading {
             pendingStateJSON = json
         } else {
@@ -307,14 +316,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
     }
 
-    private func updateDragArea(alert: Bool) {
+    private func updateDragArea() {
         guard dragView != nil else { return }
-        if alert {
+        // 还没同步过：整张卡除了顶部一条，都留给网页（好点「打开网页版」）
+        if alerting || !hasState {
             let strip: CGFloat = 34
             dragView.frame = NSRect(x: 0, y: card.bounds.height - strip,
                                     width: card.bounds.width, height: strip)
             dragView.passthroughRect = .zero
-            shadowView.layer?.shadowOpacity = 0.28
+            shadowView.layer?.shadowOpacity = alerting || isGlass ? 0.28 : 0
         } else {
             dragView.frame = card.bounds
             // 右上角两颗按钮（功德 / 打开网页）交给网页自己处理点击
@@ -335,7 +345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         suppressedAlertType = action.components(separatedBy: "_").first
         server?.setPendingAction(action, source: activeSourceId)
         alerting = false
-        updateDragArea(alert: false)
+        updateDragArea()
         webView.evaluateJavaScript("hideAlert();", completionHandler: nil)
     }
 
@@ -670,6 +680,20 @@ let miniHTML = #"""
   .mini { display: none; align-items: center; gap: 8px; width: 100%; }
   .mini-count { font-family: ui-monospace, Menlo, monospace; font-size: 21px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
   .mini-pct { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; font-weight: 700; color: #3ddc97; margin-left: auto; }
+
+  .hint { display: none; margin-top: 12px; }
+  body.unsynced .hint { display: flex; }
+  body.unsynced .meta, body.unsynced .stats { display: none; }
+  body.unsynced #meritBtn { display: none; }
+  .hint-btn {
+    appearance: none; border: 0; border-radius: 10px;
+    padding: 8px 13px; font: inherit; font-size: 12px; font-weight: 800;
+    background: #fff; color: #10202a; cursor: pointer;
+    box-shadow: 0 6px 16px -8px rgba(0,0,0,.6);
+    transition: transform .1s ease, background .14s ease;
+  }
+  .hint-btn:hover { background: #eef5f1; }
+  .hint-btn:active { transform: scale(.96); }
   body.compact .wrap { padding: 10px 13px; justify-content: center; }
   body.compact .full { display: none; }
   body.compact .mini { display: flex; }
@@ -714,6 +738,7 @@ let miniHTML = #"""
       <div class="head"><span class="dot idle" id="dot"></span><span class="head-status" id="status">等待浏览器同步</span><span class="head-ops"><button class="op" id="meritBtn" type="button" title="功德 +1">🧘</button><button class="op" id="webBtn" type="button" title="打开网页版">↗</button></span></div>
       <div class="label" id="label">距离下班还有</div>
       <div class="count" id="count">--:--:--</div>
+      <div class="hint"><button class="hint-btn" id="hintBtn" type="button">打开网页版 →</button></div>
       <div class="meta"><span>今日进度</span><span class="pct" id="pct">0%</span><i class="track"><em class="fill" id="fill"></em></i></div>
       <div class="stats">
         <span>💧 <b id="water">0/0</b><span class="unit">ml</span></span>
@@ -778,9 +803,13 @@ let miniHTML = #"""
         label = '今天已经下班了 🎉';
       }
     }
-    if (!S.synced) { dot = 'idle'; }
+    if (!S.synced) { dot = 'idle'; label = '先在浏览器打开网页版'; }
+    var unsyncedNow = !S.synced;
+    if (document.body.classList.contains('unsynced') !== unsyncedNow) {
+      document.body.classList.toggle('unsynced', unsyncedNow);
+    }
 
-    setText('status', S.status || '等待浏览器同步');
+    setText('status', S.synced ? (S.status || '上班中') : '还没同步');
     setText('label', label);
     setText('count', big);
     setText('miniCount', big);
@@ -833,6 +862,11 @@ let miniHTML = #"""
   var webBtn = document.getElementById('webBtn');
   if (webBtn) {
     webBtn.addEventListener('click', function () { postToApp('miniOpenWeb', 'open'); });
+  }
+
+  var hintBtn = document.getElementById('hintBtn');
+  if (hintBtn) {
+    hintBtn.addEventListener('click', function () { postToApp('miniOpenWeb', 'open'); });
   }
 
   function showAlert(a) {
