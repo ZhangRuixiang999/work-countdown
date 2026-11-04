@@ -21,8 +21,18 @@ final class MiniWebView: WKWebView {
 
 final class DragView: NSView {
     var onDoubleClick: (() -> Void)?
+    /// 右上角按钮区：这块不拦鼠标，让点击落到下层网页的按钮上
+    var passthroughRect: NSRect = .zero
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if passthroughRect != .zero {
+            let local = convert(point, from: superview)
+            if passthroughRect.contains(local) { return nil }
+        }
+        return super.hitTest(point)
+    }
 
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2, let handler = onDoubleClick {
@@ -211,6 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         let config = WKWebViewConfiguration()
         config.userContentController.add(self, name: "miniAction")
+        config.userContentController.add(self, name: "miniOpenWeb")
         webView = MiniWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         if #available(macOS 12.0, *) {
@@ -302,14 +313,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             let strip: CGFloat = 34
             dragView.frame = NSRect(x: 0, y: card.bounds.height - strip,
                                     width: card.bounds.width, height: strip)
+            dragView.passthroughRect = .zero
             shadowView.layer?.shadowOpacity = 0.28
         } else {
             dragView.frame = card.bounds
+            // 右上角两颗按钮（功德 / 打开网页）交给网页自己处理点击
+            dragView.passthroughRect = NSRect(x: card.bounds.width - 76,
+                                              y: card.bounds.height - 38,
+                                              width: 76, height: 38)
             shadowView.layer?.shadowOpacity = isGlass ? 0.28 : 0
         }
     }
 
     private func handleAction(_ action: String) {
+        if action == "merit_add" {
+            server?.setPendingAction(action, source: activeSourceId)
+            return
+        }
         let valid = ["water_done", "stand_done", "toilet_done", "water_skip", "stand_skip", "toilet_skip"]
         guard valid.contains(action) else { return }
         suppressedAlertType = action.components(separatedBy: "_").first
@@ -322,6 +342,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == "miniAction", let action = message.body as? String {
             handleAction(action)
+        } else if message.name == "miniOpenWeb" {
+            openWebApp()
         }
     }
 
@@ -601,6 +623,22 @@ let miniHTML = #"""
   .wrap { height: 100%; box-sizing: border-box; padding: 14px 16px; display: flex; flex-direction: column; }
   .full { display: flex; flex-direction: column; height: 100%; }
   .head { display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; color: rgba(255,255,255,.78); }
+  .head-status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .head-ops { margin-left: auto; display: flex; gap: 4px; flex: none; }
+  .op {
+    appearance: none; border: 0; padding: 0;
+    width: 24px; height: 20px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 7px;
+    background: rgba(255,255,255,.14);
+    color: #fff; font: inherit; font-size: 12px; line-height: 1;
+    cursor: pointer;
+    transition: background .14s ease, transform .1s ease;
+  }
+  .op:hover { background: rgba(255,255,255,.28); }
+  .op:active { transform: scale(.88); }
+  body.clear .op { background: rgba(0,0,0,.24); }
+  body.clear .op:hover { background: rgba(0,0,0,.4); }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: #3ddc97; box-shadow: 0 0 0 4px rgba(61,220,151,.16); flex: none; }
   .dot.idle { background: #fbbf24; box-shadow: 0 0 0 4px rgba(251,191,36,.16); }
   .label { margin-top: auto; margin-bottom: 3px; font-size: 11px; font-weight: 600; letter-spacing: .14em; color: rgba(255,255,255,.66); }
@@ -621,6 +659,13 @@ let miniHTML = #"""
     font-size: 10.5px; font-weight: 600; color: rgba(255,255,255,.76);
   }
   .stats b { color: #fff; font-size: 13px; font-weight: 800; margin: 0 1px; }
+  .stats .unit { font-size: 9px; font-weight: 600; opacity: .66; margin-left: 1px; }
+  .stats b.bump { display: inline-block; animation: bump .3s ease; }
+  @keyframes bump {
+    0% { transform: scale(1); }
+    35% { transform: scale(1.45); color: #ffe08a; }
+    100% { transform: scale(1); }
+  }
 
   .mini { display: none; align-items: center; gap: 8px; width: 100%; }
   .mini-count { font-family: ui-monospace, Menlo, monospace; font-size: 21px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
@@ -666,12 +711,12 @@ let miniHTML = #"""
 <body class="clear">
   <div class="wrap">
     <div class="full">
-      <div class="head"><span class="dot idle" id="dot"></span><span id="status">等待浏览器同步</span></div>
+      <div class="head"><span class="dot idle" id="dot"></span><span class="head-status" id="status">等待浏览器同步</span><span class="head-ops"><button class="op" id="meritBtn" type="button" title="功德 +1">🧘</button><button class="op" id="webBtn" type="button" title="打开网页版">↗</button></span></div>
       <div class="label" id="label">距离下班还有</div>
       <div class="count" id="count">--:--:--</div>
       <div class="meta"><span>今日进度</span><span class="pct" id="pct">0%</span><i class="track"><em class="fill" id="fill"></em></i></div>
       <div class="stats">
-        <span>💧 <b id="water">0</b>/<span id="waterGoal">8</span></span>
+        <span>💧 <b id="water">0/0</b><span class="unit">ml</span></span>
         <span>🧍 <b id="stand">0</b>/<span id="standGoal">6</span></span>
         <span>🚽 <b id="toilet">0</b>/<span id="toiletGoal">2</span></span>
         <span>🧘 <b id="merit">0</b></span>
@@ -743,13 +788,15 @@ let miniHTML = #"""
     setText('miniPct', (S.pct || 0) + '%');
     var fill = document.getElementById('fill');
     if (fill) fill.style.width = Math.max(0, Math.min(100, S.pct || 0)) + '%';
-    setText('water', String(S.water || 0));
-    setText('waterGoal', String(S.waterGoal || 8));
+    var cupFallback = 250;
+    var waterMl = (typeof S.waterMl === 'number') ? S.waterMl : (S.water || 0) * cupFallback;
+    var waterGoalMl = (typeof S.waterGoalMl === 'number') ? S.waterGoalMl : (S.waterGoal || 8) * cupFallback;
+    setText('water', waterMl + '/' + waterGoalMl);
     setText('stand', String(S.stand || 0));
     setText('standGoal', String(S.standGoal || 6));
     setText('toilet', String(S.toilet || 0));
     setText('toiletGoal', String(S.toiletGoal || 2));
-    setText('merit', String(S.merit || 0));
+    setText('merit', String((S.merit || 0) + meritPending));
     var d1 = document.getElementById('dot');
     if (d1) d1.className = 'dot ' + dot;
     var d2 = document.getElementById('miniDot');
@@ -758,6 +805,35 @@ let miniHTML = #"""
 
   var ALERT_TITLES = { water: '该喝水了', stand: '起来动动吧', toilet: '带薪拉粑时间' };
   var pendingAlertType = '';
+  var meritPending = 0;
+
+  function postToApp(name, body) {
+    try {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers[name]) {
+        window.webkit.messageHandlers[name].postMessage(body);
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  var meritBtn = document.getElementById('meritBtn');
+  if (meritBtn) {
+    meritBtn.addEventListener('click', function () {
+      meritPending += 1;
+      postToApp('miniAction', 'merit_add');
+      var el = document.getElementById('merit');
+      if (el) {
+        el.classList.remove('bump');
+        void el.offsetWidth;
+        el.classList.add('bump');
+      }
+      clock();
+    });
+  }
+
+  var webBtn = document.getElementById('webBtn');
+  if (webBtn) {
+    webBtn.addEventListener('click', function () { postToApp('miniOpenWeb', 'open'); });
+  }
 
   function showAlert(a) {
     var type = a && a.type ? a.type : 'water';
@@ -794,6 +870,11 @@ let miniHTML = #"""
   document.getElementById('alertSecondary').addEventListener('click', function () { alertAction('skip'); });
 
   function applyState(state) {
+    var prevMerit = S.merit || 0;
+    var incoming = state && typeof state.merit === 'number' ? state.merit : prevMerit;
+    // 小窗里点了几次功德，网页吸收几次就和本地待同步数抵消几次
+    if (incoming < prevMerit) meritPending = 0;
+    else if (incoming > prevMerit) meritPending = Math.max(0, meritPending - (incoming - prevMerit));
     S = state || {};
     S.synced = true;
     if (S.alert && S.alert.type) showAlert(S.alert);

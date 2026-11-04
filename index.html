@@ -3034,6 +3034,8 @@
       pct: Number($("overallPct").textContent) || 0,
       merit: today.merit,
       water: today.waterCups,
+      waterMl: today.waterCups * Math.max(50, Number(cfg.cupMl) || CUP_ML),
+      waterGoalMl: Math.max(250, Number(cfg.waterGoalMl) || 2000),
       waterGoal: Math.max(1, Math.round((Math.max(250, Number(cfg.waterGoalMl) || 2000)) / Math.max(50, Number(cfg.cupMl) || CUP_ML))),
       stand: today.standCount,
       standGoal: Math.max(1, cfg.standGoal),
@@ -3063,6 +3065,10 @@
       else if (type === "stand") doStand();
       else if (type === "toilet") doToilet();
       toast("小窗里点了已完成", "✅");
+    } else if (type === "merit" && parts[1] === "add") {
+      doMerit();
+      clearDesktopAlert(type);
+      return;
     }
     clearDesktopAlert(type);
   }
