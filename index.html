@@ -1360,6 +1360,10 @@
         <label for="waterGoalMl">饮水目标（ml）</label>
         <input id="waterGoalMl" type="number" min="250" max="6000" step="250" inputmode="numeric" />
       </div>
+      <div class="field">
+        <label for="cupMl">水杯容量（ml / 杯）</label>
+        <input id="cupMl" type="number" min="50" max="1000" step="10" inputmode="numeric" />
+      </div>
       <div class="field-row">
         <div class="field">
           <label for="standGoal">起身目标（次）</label>
@@ -1533,6 +1537,7 @@
     lunchEnd: "13:00",
     clockIn: "",
     waterGoalMl: 2000,
+    cupMl: CUP_ML,
     standGoal: 6,
     toiletGoal: 2,
     coffeeGoal: 0,
@@ -1559,7 +1564,7 @@
   };
 
   var NUM_FIELDS = [
-    "dailyHours", "waterGoalMl", "standGoal", "toiletGoal", "coffeeGoal",
+    "dailyHours", "waterGoalMl", "cupMl", "standGoal", "toiletGoal", "coffeeGoal",
     "waterInterval", "standInterval", "toiletInterval"
   ];
   var TIME_FIELDS = ["lunchStart", "lunchEnd", "clockIn"];
@@ -2365,8 +2370,9 @@
 
   function renderHabits() {
     var waterGoal = Math.max(250, Number(cfg.waterGoalMl) || 2000);
-    var waterMl = today.waterCups * CUP_ML;
-    var goalCups = Math.max(1, Math.round(waterGoal / CUP_ML));
+    var cupMl = Math.max(50, Number(cfg.cupMl) || CUP_ML);
+    var waterMl = today.waterCups * cupMl;
+    var goalCups = Math.max(1, Math.round(waterGoal / cupMl));
 
     $("waterCups").textContent = today.waterCups;
     $("waterGoalCups").textContent = "/ " + goalCups + " 杯";
@@ -2513,6 +2519,7 @@
     if (!cfg.lunchStart) cfg.lunchStart = DEFAULTS.lunchStart;
     if (!cfg.lunchEnd) cfg.lunchEnd = DEFAULTS.lunchEnd;
     if (!cfg.waterGoalMl) cfg.waterGoalMl = DEFAULTS.waterGoalMl;
+    if (!cfg.cupMl || cfg.cupMl < 50) cfg.cupMl = DEFAULTS.cupMl;
     if (!cfg.standGoal) cfg.standGoal = DEFAULTS.standGoal;
     if (!cfg.toiletGoal) cfg.toiletGoal = DEFAULTS.toiletGoal;
     if (!cfg.coffeeGoal) cfg.coffeeGoal = DEFAULTS.coffeeGoal;
@@ -2715,12 +2722,13 @@
 
   function doWater() {
     var goal = Math.max(250, Number(cfg.waterGoalMl) || 2000);
+    var cupMl = Math.max(50, Number(cfg.cupMl) || CUP_ML);
     today.waterCups += 1;
     today.waterLast = Date.now();
     saveToday();
     renderHabits();
-    var ml = today.waterCups * CUP_ML;
-    if (ml >= goal && ml - CUP_ML < goal) toast("今日饮水目标达成，厉害", "🏆");
+    var ml = today.waterCups * cupMl;
+    if (ml >= goal && ml - cupMl < goal) toast("今日饮水目标达成，厉害", "🏆");
     playSound(cfg.soundWater);
   }
   $("waterAdd").addEventListener("click", doWater);
@@ -2753,7 +2761,7 @@
     var now = new Date();
     var dateStr = now.getFullYear() + "-" + (now.getMonth() + 1) + "-" + now.getDate();
     var waterGoal = Math.max(250, Number(cfg.waterGoalMl) || 2000);
-    var waterMl = today.waterCups * CUP_ML;
+    var waterMl = today.waterCups * Math.max(50, Number(cfg.cupMl) || CUP_ML);
     var caffeine = 0;
     (cfg.drinkTypes || []).forEach(function (d) {
       caffeine += ((today.drinks && today.drinks[d.id]) || 0) * d.mg;
