@@ -2336,11 +2336,10 @@
 
     var standMs = today.standLast ? Date.now() - today.standLast : 0;
     var standMin = Math.floor(standMs / 60000);
-    var standInterval = Math.max(1, Number(cfg.standInterval) || 45);
     $("standMin").textContent = standMin;
-    $("standBar").style.width = clamp((standMs / (standInterval * 60000)) * 100, 0, 100).toFixed(1) + "%";
+    $("standBar").style.width = clamp(today.standCount / Math.max(1, cfg.standGoal) * 100, 0, 100).toFixed(1) + "%";
     $("standNext").textContent = formatShortClock(reminderLeft("standLast", cfg.standInterval));
-    $("standSub").textContent = standMin >= 60 ? "坐太久了，站起来走两步" : "今天起身 " + today.standCount + " 次";
+    $("standSub").textContent = standMin >= 60 ? "坐太久了，站起来走两步" : "今天起身 " + today.standCount + " / " + Math.max(1, cfg.standGoal) + " 次";
 
     var caffeine = 0;
     (cfg.drinkTypes || []).forEach(function (d) {
