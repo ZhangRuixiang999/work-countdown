@@ -2749,6 +2749,7 @@
     var cupMl = Math.max(50, Number(cfg.cupMl) || CUP_ML);
     today.waterCups += 1;
     today.waterLast = Date.now();
+    clearDesktopAlert("water");
     saveToday();
     renderHabits();
     var ml = today.waterCups * cupMl;
@@ -2760,6 +2761,7 @@
   function doStand() {
     today.standCount += 1;
     today.standLast = Date.now();
+    clearDesktopAlert("stand");
     saveToday();
     renderHabits();
     if (today.standCount >= cfg.standGoal) {
@@ -3098,6 +3100,7 @@
   function doToilet() {
     today.toiletCount += 1;
     today.toiletLast = Date.now();
+    clearDesktopAlert("toilet");
     saveToday();
     renderHabits();
     toast("带薪拉粑 +1，摸鱼 " + TOILET_MINUTES + " 分钟", "🚽");
@@ -3245,6 +3248,93 @@
     ensureAudio();
   }, { once: true });
 
+  /* ---------- 桌面透明小窗同步（只走本机回环 127.0.0.1，不上传） ---------- */
+
+  var DESKTOP_SYNC_URL = "http://127.0.0.1:47821";
+  var desktopSourceId = "tab" + Math.random().toString(36).slice(2, 8);
+  var desktopAlert = null;
+  var desktopOnline = null;
+
+  function desktopMidnightMs() {
+    var d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  }
+
+  function desktopState() {
+    var r = lastResult || {};
+    var base = desktopMidnightMs();
+    return {
+      sourceId: desktopSourceId,
+      focused: document.hasFocus(),
+      time: $("countdown").textContent,
+      label: $("countdownLabel").textContent,
+      status: $("statusText").textContent,
+      pct: Number($("overallPct").textContent) || 0,
+      merit: today.merit,
+      water: today.waterCups,
+      waterGoal: Math.max(1, Math.round((Math.max(250, Number(cfg.waterGoalMl) || 2000)) / Math.max(50, Number(cfg.cupMl) || CUP_ML))),
+      stand: today.standCount,
+      standGoal: Math.max(1, cfg.standGoal),
+      toilet: today.toiletCount,
+      toiletGoal: Math.max(1, cfg.toiletGoal),
+      shiftStart: r.shiftStart == null ? null : base + r.shiftStart * 1000,
+      shiftEnd: r.shiftEnd == null ? null : base + r.shiftEnd * 1000,
+      statusKind: r.status || "",
+      alert: desktopAlert
+    };
+  }
+
+  function clearDesktopAlert(type) {
+    if (desktopAlert && (!type || desktopAlert.type === type)) desktopAlert = null;
+  }
+
+  function notifyDesktop(type, message, icon) {
+    if (cfg.dnd) return;
+    desktopAlert = { type: type, icon: icon || "🔔", text: message };
+  }
+
+  function applyDesktopAction(action) {
+    var parts = String(action || "").split("_");
+    var type = parts[0];
+    if (parts[1] === "done") {
+      if (type === "water") doWater();
+      else if (type === "stand") doStand();
+      else if (type === "toilet") doToilet();
+      toast("小窗里点了已完成", "✅");
+    }
+    clearDesktopAlert(type);
+    hidePipRemind();
+  }
+
+  function desktopSyncTick() {
+    if (!window.fetch) return scheduleDesktopSync(15000);
+    var payload;
+    try { payload = JSON.stringify(desktopState()); } catch (e) { return scheduleDesktopSync(15000); }
+    fetch(DESKTOP_SYNC_URL + "/state", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: payload,
+      cache: "no-store"
+    }).then(function (res) {
+      if (!res.ok) throw new Error("bad status");
+      return res.json();
+    }).then(function (data) {
+      if (desktopOnline !== true) {
+        desktopOnline = true;
+        toast("桌面透明小窗已连上，看屏幕右上角", "🪟", true);
+      }
+      if (data && data.action) applyDesktopAction(data.action);
+      scheduleDesktopSync(2000);
+    }).catch(function () {
+      if (desktopOnline !== false) desktopOnline = false;
+      scheduleDesktopSync(12000);
+    });
+  }
+
+  function scheduleDesktopSync(delay) {
+    setTimeout(desktopSyncTick, delay || 2000);
+  }
+
   /* ---------- 主循环 ---------- */
 
   function checkDayRollover() {
@@ -3296,24 +3386,28 @@
     tick();
     setReviewTabs();
     setInterval(tick, 100);
+    scheduleDesktopSync(800);
 
     setInterval(function () {
       checkReminder("waterLast", cfg.waterInterval, function () {
         flashCard("waterCard");
         toast("该喝水了，起身接杯水吧", "💧");
         pipRemind("water", "该喝水了，起身接杯水吧", "💧");
+        notifyDesktop("water", "该喝水了，起身接杯水吧", "💧");
         playSound(cfg.soundWater);
       });
       checkReminder("standLast", cfg.standInterval, function () {
         flashCard("standCard");
         toast("坐了 " + cfg.standInterval + " 分钟了，起来活动下", "🧍");
         pipRemind("stand", "坐了 " + cfg.standInterval + " 分钟了，起来活动下", "🧍");
+        notifyDesktop("stand", "坐了 " + cfg.standInterval + " 分钟了，起来活动下", "🧍");
         playSound(cfg.soundStand);
       });
       checkReminder("toiletLast", cfg.toiletInterval, function () {
         flashCard("toiletCard");
         toast("该去趟洗手间了，顺便走走", "🚽");
         pipRemind("toilet", "该去趟洗手间了，顺便走走", "🚽");
+        notifyDesktop("toilet", "该去趟洗手间了，顺便走走", "🚽");
         playSound(cfg.soundToilet);
       });
       saveToday();
