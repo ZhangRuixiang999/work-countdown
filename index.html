@@ -744,8 +744,6 @@
     transition: color 0.16s ease, background 0.16s ease;
   }
   .mini-restore:hover { color: var(--text); background: var(--fill2); }
-  .mini-restore.pip-on { color: var(--green); background: var(--green-soft); }
-
   .mini-overall { display: none; }
   .mo-label { flex: none; }
   .mo-value {
@@ -1064,7 +1062,6 @@
 
   <section class="card hero">
     <div class="mini-ops" id="miniOps">
-      <button class="mini-restore" id="miniPip" type="button" title="弹出屏幕悬浮小窗（画中画，置于所有窗口之上）" aria-label="屏幕画中画小窗">⛶</button>
       <button class="mini-restore" id="miniRestore" type="button" title="退出迷你模式" aria-label="退出迷你模式">✕</button>
     </div>
     <div class="hero-left">
@@ -1502,21 +1499,6 @@
         <input id="bgImageUrl" type="url" placeholder="https://..." />
       </div>
       <button class="btn ghost" id="bgClear" style="width:100%; padding:9px 10px; font-size:13px;">移除背景图片</button>
-      <div class="field">
-        <label for="pipBgPreset">小窗背景（画中画）</label>
-        <select id="pipBgPreset">
-          <option value="">默认深色</option>
-          <option value="#0b3d2e">墨绿</option>
-          <option value="#0d1b3d">深夜蓝</option>
-          <option value="#3d2a0b">暖棕</option>
-          <option value="#2b2b2b">炭灰</option>
-          <option value="#fbfcfe">浅色</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="pipBgUrl">小窗背景图片链接</label>
-        <input id="pipBgUrl" type="url" placeholder="https://...（留空则用上面的颜色）" />
-      </div>
     </section>
 
     <section class="drawer-section">
@@ -1569,8 +1551,6 @@
     toiletInterval: 90,
     soundOn: true,
     dnd: false,
-    pipBg: "",
-    pipBgUrl: "",
     soundWater: "ding",
     soundStand: "bell",
     soundCoffee: "bubble",
@@ -2508,8 +2488,6 @@
     fillExtraForm();
     updateThemeControl();
     $("bgPreset").value = cfg.bgPreset || "default";
-    $("pipBgPreset").value = cfg.pipBg || "";
-    $("pipBgUrl").value = cfg.pipBgUrl || "";
     $("reviewDays").value = String(cfg.reviewDays || 7);
     $("bgImageUrl").value = cfg.bgImage && cfg.bgImage.indexOf("data:") !== 0 ? cfg.bgImage : "";
     $("bgImageFile").value = "";
@@ -2638,7 +2616,6 @@
     lastClockIn = cfg.clockIn;
     saveConfig();
     fillForm();
-    applyPipBg();
     today = emptyToday(dayKeyOf(new Date()));
     resetReminderBaselines();
     tick();
@@ -2712,18 +2689,6 @@
     cfg.bgImage = (this.value || "").trim();
     saveConfig();
     applyAppearance();
-  });
-
-  $("pipBgPreset").addEventListener("change", function () {
-    cfg.pipBg = this.value || "";
-    saveConfig();
-    applyPipBg();
-  });
-
-  $("pipBgUrl").addEventListener("input", function () {
-    cfg.pipBgUrl = (this.value || "").trim();
-    saveConfig();
-    applyPipBg();
   });
 
   $("bgClear").addEventListener("click", function () {
@@ -2844,218 +2809,6 @@
     var b = $("miniToggle");
     b.setAttribute("aria-label", "迷你模式");
     b.title = "迷你模式：缩成小窗放角落";
-  });
-
-  /* 屏幕画中画：把倒计时弹出成系统级悬浮小窗 */
-  var PIP_CSS =
-    "html,body{margin:0;background:#0d1016;color:#e9edf5;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;}" +
-    "body{display:flex;align-items:center;justify-content:center;min-height:100vh;background-size:cover;background-position:center;background-repeat:no-repeat;}" +
-    ".pip{position:relative;width:100%;box-sizing:border-box;padding:12px 14px;min-height:100vh;display:flex;flex-direction:column;justify-content:center;background:rgba(6,8,12,0);}" +
-    ".pip-top{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#8b93a7;}" +
-    ".pip-status{color:#3ddc97;}" +
-    ".pip-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
-    ".pip-actions{flex:none;display:flex;gap:4px;}" +
-    ".pip-btn{appearance:none;width:26px;height:22px;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:7px;background:rgba(255,255,255,.08);color:#c9d1e0;font-size:12px;line-height:1;cursor:pointer;}" +
-    ".pip-btn:hover{background:rgba(255,255,255,.16);}" +
-    ".pip-label{font-size:11.5px;color:#8b93a7;margin-top:5px;}" +
-    ".pip-time{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:30px;font-weight:600;line-height:1.15;letter-spacing:1px;margin-top:1px;background:linear-gradient(180deg,#fff 10%,#b9c4d6 100%);-webkit-background-clip:text;background-clip:text;color:transparent;}" +
-    ".pip-meta{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:#8b93a7;}" +
-    ".pip-pct{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:650;color:#3ddc97;}" +
-    ".pip-track{flex:1;height:5px;border-radius:999px;background:rgba(255,255,255,.14);overflow:hidden;font-style:normal;}" +
-    ".pip-fill{display:block;height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#2fbf85,#3ddc97 55%,#a9f4cf);font-style:normal;}" +
-    ".pip-mini{display:none;align-items:center;gap:7px;}" +
-    ".pip.compact .pip-full{display:none;}" +
-    ".pip.compact .pip-mini{display:flex;}" +
-    ".pip.compact{padding:9px 11px;justify-content:center;}" +
-    ".pip-dot{width:7px;height:7px;border-radius:50%;background:#3ddc97;flex:none;box-shadow:0 0 7px rgba(61,220,151,.85);}" +
-    ".pip-mini-time{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:16px;font-weight:600;letter-spacing:.6px;color:#e9edf5;}" +
-    ".pip-mini-pct{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;font-weight:650;color:#3ddc97;}" +
-    ".pip-mini .pip-btn{width:20px;height:18px;font-size:11px;margin-left:auto;}" +
-    ".pip.compact .pip-remind{left:3px;right:3px;top:3px;bottom:3px;padding:3px 6px;gap:4px;border-radius:9px;font-size:10.5px;background:rgba(14,58,42,.96);}" +
-    ".pip.compact .pip-remind-btn{padding:2px 5px;font-size:9.5px;}" +
-    ".pip-remind{position:absolute;left:9px;right:9px;bottom:8px;display:none;align-items:center;gap:5px;padding:6px 8px;border-radius:10px;background:rgba(61,220,151,.2);border:1px solid rgba(61,220,151,.45);font-size:11.5px;backdrop-filter:blur(6px);}" +
-    ".pip-remind.show{display:flex;}" +
-    ".pip-remind-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e9edf5;}" +
-    ".pip-remind-btn{appearance:none;flex:none;padding:3px 7px;border-radius:6px;border:1px solid rgba(61,220,151,.4);background:rgba(61,220,151,.22);color:#8de6bf;font-size:10.5px;line-height:1.2;cursor:pointer;}" +
-    ".pip-remind-btn:active{transform:scale(.95);}" +
-    ".pip-remind-btn.skip{border-color:rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:#9aa3b5;}" +
-    ".pip-flash{position:absolute;left:9px;right:9px;bottom:8px;padding:6px 9px;border-radius:10px;background:rgba(61,220,151,.9);color:#08110d;font-size:11.5px;font-weight:600;text-align:center;opacity:0;transform:translateY(4px);transition:opacity .2s ease,transform .2s ease;pointer-events:none;z-index:2;}" +
-    ".pip-flash.show{opacity:1;transform:translateY(0);}";
-
-  var pipWin = null;
-  var pipEls = null;
-  var pipRemindType = null;
-  var pipFlashTimer = null;
-  var PIP_W = 264, PIP_H = 200;
-  var PIP_CW = 232, PIP_CH = 56;
-
-  function applyPipCompact() {
-    if (!pipWin) return;
-    var root = pipWin.document.getElementById("pipRoot");
-    if (root) root.classList.toggle("compact", !!cfg.pipCompact);
-  }
-
-  function setPipCompact(on) {
-    if (!pipWin) return;
-    cfg.pipCompact = !!on;
-    saveConfig();
-    applyPipCompact();
-    syncPip();
-    try {
-      if (cfg.pipCompact) pipWin.resizeTo(PIP_CW, PIP_CH);
-      else pipWin.resizeTo(PIP_W, PIP_H);
-    } catch (e) {}
-  }
-
-  function syncPip() {
-    if (!pipWin || !pipEls) return;
-    pipEls.time.textContent = $("countdown").textContent;
-    pipEls.status.textContent = $("statusText").textContent;
-    pipEls.label.textContent = $("countdownLabel").textContent;
-    pipEls.pct.textContent = $("overallPct").textContent + "%";
-    pipEls.fill.style.width = $("progressBar").style.width || "0%";
-    pipEls.dnd.textContent = cfg.dnd ? "🔕" : "🔔";
-    if (pipEls.miniTime) pipEls.miniTime.textContent = $("countdown").textContent;
-    if (pipEls.miniPct) pipEls.miniPct.textContent = $("overallPct").textContent + "%";
-  }
-
-  function applyPipBg() {
-    if (!pipWin) return;
-    var base = cfg.pipBg || "#0d1016";
-    var body = pipWin.document.body;
-    if (cfg.pipBgUrl) {
-      body.style.background =
-        'linear-gradient(rgba(6,8,12,.4), rgba(6,8,12,.62)), url("' + cfg.pipBgUrl + '") center/cover no-repeat, ' + base;
-    } else {
-      body.style.background = base;
-    }
-  }
-
-  function pipRemind(type, message, icon) {
-    if (!pipWin || cfg.dnd) return;
-    var d = pipWin.document;
-    var el = d.getElementById("pipRemind");
-    if (!el) return;
-    pipRemindType = type;
-    d.getElementById("pipRemindIcon").textContent = icon || "🔔";
-    d.getElementById("pipRemindText").textContent = message;
-    el.classList.add("show");
-  }
-
-  function hidePipRemind() {
-    pipRemindType = null;
-    if (!pipWin) return;
-    var el = pipWin.document.getElementById("pipRemind");
-    if (el) el.classList.remove("show");
-  }
-
-  function pipFlash(message) {
-    if (!pipWin) return;
-    var el = pipWin.document.getElementById("pipFlash");
-    if (!el) return;
-    el.textContent = message;
-    el.classList.add("show");
-    if (pipFlashTimer) clearTimeout(pipFlashTimer);
-    pipFlashTimer = setTimeout(function () { el.classList.remove("show"); }, 1800);
-  }
-
-  $("miniPip").addEventListener("click", function () {
-    if (pipWin) {
-      try { pipWin.close(); } catch (e) {}
-      pipWin = null;
-      pipEls = null;
-      $("miniPip").classList.remove("pip-on");
-      try { sessionStorage.removeItem("niuxu-pip-open"); } catch (e) {}
-      toast("画中画小窗已关闭", "⛶", true);
-      return;
-    }
-    if (!("documentPictureInPicture" in window)) {
-      toast("屏幕悬浮小窗需要 Chrome / Edge 浏览器（Safari 不支持）", "⛶", true);
-      return;
-    }
-    documentPictureInPicture.requestWindow({
-      width: cfg.pipCompact ? PIP_CW : PIP_W,
-      height: cfg.pipCompact ? PIP_CH : PIP_H
-    }).then(function (w) {
-      pipWin = w;
-      w.document.title = "牛马续航";
-      var st = w.document.createElement("style");
-      st.textContent = PIP_CSS;
-      w.document.head.appendChild(st);
-      var pd = w.document;
-      pd.body.innerHTML =
-        '<div class="pip" id="pipRoot">' +
-        '<div class="pip-full">' +
-        '<div class="pip-top">' +
-        '<span class="pip-status" id="pipStatus">上班中</span>' +
-        '<span class="pip-name">牛马续航</span>' +
-        '<span class="pip-actions">' +
-        '<button class="pip-btn" id="pipCollapse" title="收起成小条">▭</button>' +
-        '<button class="pip-btn" id="pipDnd" title="勿扰模式">🔔</button>' +
-        '<button class="pip-btn" id="pipMerit" title="攒功德 +1">🧘</button>' +
-        "</span>" +
-        "</div>" +
-        '<div class="pip-label" id="pipLabel">距离下班还有</div>' +
-        '<div class="pip-time" id="pipTime">00:00:00</div>' +
-        '<div class="pip-meta"><span>今日进度</span><span class="pip-pct" id="pipPct">0%</span><i class="pip-track"><em class="pip-fill" id="pipFill"></em></i></div>' +
-        "</div>" +
-        '<div class="pip-mini">' +
-        '<span class="pip-dot"></span>' +
-        '<span class="pip-mini-time" id="pipMiniTime">00:00:00</span>' +
-        '<span class="pip-mini-pct" id="pipMiniPct">0%</span>' +
-        '<button class="pip-btn" id="pipExpand" title="展开">⤢</button>' +
-        "</div>" +
-        '<div class="pip-remind" id="pipRemind"><span class="pip-remind-text"><span id="pipRemindIcon">💧</span><span id="pipRemindText"></span></span><button class="pip-remind-btn" id="pipRemindDone">已完成</button><button class="pip-remind-btn skip" id="pipRemindSkip">忽略</button></div>' +
-        '<div class="pip-flash" id="pipFlash"></div>' +
-        "</div>";
-      pd.getElementById("pipCollapse").addEventListener("click", function () {
-        setPipCompact(true);
-      });
-      pd.getElementById("pipExpand").addEventListener("click", function () {
-        setPipCompact(false);
-      });
-      pd.getElementById("pipDnd").addEventListener("click", function () {
-        cfg.dnd = !cfg.dnd;
-        saveConfig();
-        updateDndControl();
-        if (cfg.dnd) hidePipRemind();
-        syncPip();
-      });
-      pd.getElementById("pipMerit").addEventListener("click", function () {
-        doMerit();
-        pipFlash("🧘 功德 +1");
-      });
-      pd.getElementById("pipRemindDone").addEventListener("click", function () {
-        var t = pipRemindType;
-        hidePipRemind();
-        if (t === "water") doWater();
-        else if (t === "stand") doStand();
-        else if (t === "toilet") doToilet();
-      });
-      pd.getElementById("pipRemindSkip").addEventListener("click", hidePipRemind);
-      pipEls = {
-        time: pd.getElementById("pipTime"),
-        status: pd.getElementById("pipStatus"),
-        label: pd.getElementById("pipLabel"),
-        pct: pd.getElementById("pipPct"),
-        fill: pd.getElementById("pipFill"),
-        dnd: pd.getElementById("pipDnd"),
-        miniTime: pd.getElementById("pipMiniTime"),
-        miniPct: pd.getElementById("pipMiniPct")
-      };
-      applyPipBg();
-      applyPipCompact();
-      syncPip();
-      $("miniPip").classList.add("pip-on");
-      try { sessionStorage.setItem("niuxu-pip-open", "1"); } catch (e) {}
-      w.addEventListener("pagehide", function () {
-        pipWin = null;
-        pipEls = null;
-        $("miniPip").classList.remove("pip-on");
-      });
-      document.body.classList.remove("mini");
-      toast("画中画小窗已弹出，点 ▭ 可收起成小条，拖到屏幕边缘即可", "⛶", true);
-    }).catch(function () { pipWin = null; });
   });
 
   /* 勿扰模式：关掉所有提示和声音 */
@@ -3303,7 +3056,6 @@
       toast("小窗里点了已完成", "✅");
     }
     clearDesktopAlert(type);
-    hidePipRemind();
   }
 
   function desktopSyncTick() {
@@ -3354,20 +3106,10 @@
     renderWish();
     renderEvent();
     renderReview();
-    syncPip();
   }
 
   function start() {
     fillForm();
-    // 上次开着画中画、因刷新被浏览器关掉时，提示怎么重新打开
-    try {
-      if (sessionStorage.getItem("niuxu-pip-open") === "1") {
-        sessionStorage.removeItem("niuxu-pip-open");
-        setTimeout(function () {
-          toast("画中画小窗已关闭（刷新页面会关掉它），需要的话点卡片上的 ⛶ 重新打开", "⛶", true);
-        }, 1500);
-      }
-    } catch (e) {}
     var autoFilled = false;
     if (!cfg.clockIn) {
       $("clockIn").value = nowTimeString();
@@ -3392,21 +3134,18 @@
       checkReminder("waterLast", cfg.waterInterval, function () {
         flashCard("waterCard");
         toast("该喝水了，起身接杯水吧", "💧");
-        pipRemind("water", "该喝水了，起身接杯水吧", "💧");
         notifyDesktop("water", "该喝水了，起身接杯水吧", "💧");
         playSound(cfg.soundWater);
       });
       checkReminder("standLast", cfg.standInterval, function () {
         flashCard("standCard");
         toast("坐了 " + cfg.standInterval + " 分钟了，起来活动下", "🧍");
-        pipRemind("stand", "坐了 " + cfg.standInterval + " 分钟了，起来活动下", "🧍");
         notifyDesktop("stand", "坐了 " + cfg.standInterval + " 分钟了，起来活动下", "🧍");
         playSound(cfg.soundStand);
       });
       checkReminder("toiletLast", cfg.toiletInterval, function () {
         flashCard("toiletCard");
         toast("该去趟洗手间了，顺便走走", "🚽");
-        pipRemind("toilet", "该去趟洗手间了，顺便走走", "🚽");
         notifyDesktop("toilet", "该去趟洗手间了，顺便走走", "🚽");
         playSound(cfg.soundToilet);
       });
