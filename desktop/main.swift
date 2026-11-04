@@ -74,7 +74,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         server = SyncServer(
             port: syncPort,
             onState: { [weak self] state in self?.applyState(state) },
-            onShow: { [weak self] in self?.presentWindow() }
+            onShow: { [weak self] in self?.presentWindow() },
+            onToggle: { [weak self] in
+                guard let self = self else { return false }
+                self.toggleWindow()
+                return self.window.isVisible
+            }
         )
         server.start()
 
@@ -426,6 +431,7 @@ final class SyncServer {
     private let port: UInt16
     private let onState: ([String: Any]) -> Void
     private let onShow: () -> Void
+    private let onToggle: () -> Bool
     private let queue = DispatchQueue(label: "com.niuxu.mini.sync")
     private var listener: NWListener?
     private var pendingAction: String?
@@ -434,10 +440,12 @@ final class SyncServer {
 
     init(port: UInt16,
          onState: @escaping ([String: Any]) -> Void,
-         onShow: @escaping () -> Void) {
+         onShow: @escaping () -> Void,
+         onToggle: @escaping () -> Bool) {
         self.port = port
         self.onState = onState
         self.onShow = onShow
+        self.onToggle = onToggle
     }
 
     func setPendingAction(_ action: String, source: String?) {
@@ -532,7 +540,10 @@ final class SyncServer {
             payload = Data()
         } else if method == "GET" && path == "/show" {
             DispatchQueue.main.async { self.onShow() }
-            payload = Data("{\"ok\":true}".utf8)
+            payload = Data("{\"ok\":true,\"visible\":true}".utf8)
+        } else if method == "GET" && path == "/toggle" {
+            let visible = DispatchQueue.main.sync { self.onToggle() }
+            payload = Data("{\"ok\":true,\"visible\":\(visible ? "true" : "false")}".utf8)
         } else if method == "GET" && (path == "/ping" || path == "/") {
             payload = Data("{\"ok\":true,\"app\":\"niuxu-mini\"}".utf8)
         } else if method == "POST" && path == "/state" {
