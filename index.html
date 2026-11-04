@@ -224,6 +224,27 @@
   #pToilet { background: linear-gradient(90deg, #5b7fd6, #82a6f5); }
   .pval { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
+  .hero-merit {
+    display: flex;
+    align-items: center;
+    width: fit-content;
+    gap: 6px;
+    margin-top: 10px;
+    padding: 4px 12px;
+    border: 1px solid rgba(61, 220, 151, 0.22);
+    border-radius: 999px;
+    background: var(--green-soft);
+    color: var(--green);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .hero-merit b {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
   .hero-actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
 
   .btn {
@@ -1072,6 +1093,8 @@
       <div class="big-label">今日完成进度</div>
       <div class="big-value"><span id="overallPct">0</span><span class="pct">%</span></div>
 
+      <div class="hero-merit">🧘 今日功德 <b id="heroMerit">0</b></div>
+
       <div class="progress-list">
         <div class="prow">
           <span class="pname">💧 喝水</span>
@@ -1084,14 +1107,14 @@
           <span class="pval" id="vStand">0%</span>
         </div>
         <div class="prow">
-          <span class="pname">☕ 咖啡</span>
-          <div class="pbar"><div id="pCoffee"></div></div>
-          <span class="pval" id="vCoffee">0%</span>
-        </div>
-        <div class="prow">
           <span class="pname">🚽 拉粑</span>
           <div class="pbar"><div id="pToilet"></div></div>
           <span class="pval" id="vToilet">0%</span>
+        </div>
+        <div class="prow">
+          <span class="pname">☕ 咖啡</span>
+          <div class="pbar"><div id="pCoffee"></div></div>
+          <span class="pval" id="vCoffee">0%</span>
         </div>
       </div>
 
@@ -2407,6 +2430,7 @@
     // 今日功德
     $("meritCount").textContent = today.merit;
     $("meritTop").textContent = today.merit;
+    if ($("heroMerit")) $("heroMerit").textContent = today.merit;
     $("meritSub").textContent = today.merit === 0
       ? "今天还没攒功德"
       : today.merit < 10
