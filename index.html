@@ -1453,6 +1453,21 @@
         <input id="bgImageUrl" type="url" placeholder="https://..." />
       </div>
       <button class="btn ghost" id="bgClear" style="width:100%; padding:9px 10px; font-size:13px;">移除背景图片</button>
+      <div class="field">
+        <label for="pipBgPreset">小窗背景（画中画）</label>
+        <select id="pipBgPreset">
+          <option value="">默认深色</option>
+          <option value="#0b3d2e">墨绿</option>
+          <option value="#0d1b3d">深夜蓝</option>
+          <option value="#3d2a0b">暖棕</option>
+          <option value="#2b2b2b">炭灰</option>
+          <option value="#fbfcfe">浅色</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="pipBgUrl">小窗背景图片链接</label>
+        <input id="pipBgUrl" type="url" placeholder="https://...（留空则用上面的颜色）" />
+      </div>
     </section>
 
     <section class="drawer-section">
@@ -1504,6 +1519,8 @@
     toiletInterval: 90,
     soundOn: true,
     dnd: false,
+    pipBg: "",
+    pipBgUrl: "",
     soundWater: "ding",
     soundStand: "bell",
     soundCoffee: "bubble",
@@ -2436,6 +2453,8 @@
     fillExtraForm();
     updateThemeControl();
     $("bgPreset").value = cfg.bgPreset || "default";
+    $("pipBgPreset").value = cfg.pipBg || "";
+    $("pipBgUrl").value = cfg.pipBgUrl || "";
     $("reviewDays").value = String(cfg.reviewDays || 7);
     $("bgImageUrl").value = cfg.bgImage && cfg.bgImage.indexOf("data:") !== 0 ? cfg.bgImage : "";
     $("bgImageFile").value = "";
@@ -2563,6 +2582,7 @@
     lastClockIn = cfg.clockIn;
     saveConfig();
     fillForm();
+    applyPipBg();
     today = emptyToday(dayKeyOf(new Date()));
     resetReminderBaselines();
     tick();
@@ -2638,6 +2658,18 @@
     applyAppearance();
   });
 
+  $("pipBgPreset").addEventListener("change", function () {
+    cfg.pipBg = this.value || "";
+    saveConfig();
+    applyPipBg();
+  });
+
+  $("pipBgUrl").addEventListener("input", function () {
+    cfg.pipBgUrl = (this.value || "").trim();
+    saveConfig();
+    applyPipBg();
+  });
+
   $("bgClear").addEventListener("click", function () {
     cfg.bgImage = "";
     saveConfig();
@@ -2656,7 +2688,7 @@
 
   /* ---------- 各板块按钮 ---------- */
 
-  $("waterAdd").addEventListener("click", function () {
+  function doWater() {
     var goal = Math.max(250, Number(cfg.waterGoalMl) || 2000);
     today.waterCups += 1;
     today.waterLast = Date.now();
@@ -2665,9 +2697,10 @@
     var ml = today.waterCups * CUP_ML;
     if (ml >= goal && ml - CUP_ML < goal) toast("今日饮水目标达成，厉害", "🏆");
     playSound(cfg.soundWater);
-  });
+  }
+  $("waterAdd").addEventListener("click", doWater);
 
-  $("standReset").addEventListener("click", function () {
+  function doStand() {
     today.standCount += 1;
     today.standLast = Date.now();
     saveToday();
@@ -2678,7 +2711,8 @@
       toast("起来动了动，第 " + today.standCount + " 次", "🧍");
     }
     playSound(cfg.soundStand);
-  });
+  }
+  $("standReset").addEventListener("click", doStand);
 
   $("coffeeAdd").addEventListener("click", function () {
     today.drinks.coffee = (today.drinks.coffee || 0) + 1;
@@ -2755,21 +2789,33 @@
   /* 屏幕画中画：把倒计时弹出成系统级悬浮小窗 */
   var PIP_CSS =
     "html,body{margin:0;background:#0d1016;color:#e9edf5;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;}" +
-    "body{display:flex;align-items:center;justify-content:center;min-height:100vh;}" +
-    ".pip{position:relative;width:100%;box-sizing:border-box;padding:13px 15px;}" +
-    ".pip-toast{position:absolute;left:10px;right:10px;top:9px;display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:10px;background:rgba(61,220,151,.18);border:1px solid rgba(61,220,151,.42);color:#e9edf5;font-size:12px;box-shadow:0 10px 26px -12px rgba(0,0,0,.9);opacity:0;transform:translateY(-6px);transition:opacity .22s ease,transform .22s ease;pointer-events:none;}" +
-    ".pip-toast.show{opacity:1;transform:translateY(0);}" +
-    ".pip-head{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#8b93a7;margin-bottom:2px;}" +
+    "body{display:flex;align-items:center;justify-content:center;min-height:100vh;background-size:cover;background-position:center;background-repeat:no-repeat;}" +
+    ".pip{position:relative;width:100%;box-sizing:border-box;padding:12px 14px;min-height:100vh;display:flex;flex-direction:column;justify-content:center;background:rgba(6,8,12,0);}" +
+    ".pip-top{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#8b93a7;}" +
     ".pip-status{color:#3ddc97;}" +
-    ".pip-label{font-size:11.5px;color:#8b93a7;}" +
-    ".pip-time{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:31px;font-weight:600;line-height:1.15;letter-spacing:1px;margin-top:2px;background:linear-gradient(180deg,#fff 10%,#b9c4d6 100%);-webkit-background-clip:text;background-clip:text;color:transparent;}" +
-    ".pip-meta{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:12px;color:#8b93a7;}" +
+    ".pip-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
+    ".pip-actions{flex:none;display:flex;gap:4px;}" +
+    ".pip-btn{appearance:none;width:26px;height:22px;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:7px;background:rgba(255,255,255,.08);color:#c9d1e0;font-size:12px;line-height:1;cursor:pointer;}" +
+    ".pip-btn:hover{background:rgba(255,255,255,.16);}" +
+    ".pip-label{font-size:11.5px;color:#8b93a7;margin-top:5px;}" +
+    ".pip-time{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:30px;font-weight:600;line-height:1.15;letter-spacing:1px;margin-top:1px;background:linear-gradient(180deg,#fff 10%,#b9c4d6 100%);-webkit-background-clip:text;background-clip:text;color:transparent;}" +
+    ".pip-meta{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:#8b93a7;}" +
     ".pip-pct{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:650;color:#3ddc97;}" +
-    ".pip-track{flex:1;height:5px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;font-style:normal;}" +
-    ".pip-fill{display:block;height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#2fbf85,#3ddc97 55%,#a9f4cf);font-style:normal;}";
+    ".pip-track{flex:1;height:5px;border-radius:999px;background:rgba(255,255,255,.14);overflow:hidden;font-style:normal;}" +
+    ".pip-fill{display:block;height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#2fbf85,#3ddc97 55%,#a9f4cf);font-style:normal;}" +
+    ".pip-remind{position:absolute;left:9px;right:9px;bottom:8px;display:none;align-items:center;gap:5px;padding:6px 8px;border-radius:10px;background:rgba(61,220,151,.2);border:1px solid rgba(61,220,151,.45);font-size:11.5px;backdrop-filter:blur(6px);}" +
+    ".pip-remind.show{display:flex;}" +
+    ".pip-remind-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e9edf5;}" +
+    ".pip-remind-btn{appearance:none;flex:none;padding:3px 7px;border-radius:6px;border:1px solid rgba(61,220,151,.4);background:rgba(61,220,151,.22);color:#8de6bf;font-size:10.5px;line-height:1.2;cursor:pointer;}" +
+    ".pip-remind-btn:active{transform:scale(.95);}" +
+    ".pip-remind-btn.skip{border-color:rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:#9aa3b5;}" +
+    ".pip-flash{position:absolute;left:9px;right:9px;bottom:8px;padding:6px 9px;border-radius:10px;background:rgba(61,220,151,.9);color:#08110d;font-size:11.5px;font-weight:600;text-align:center;opacity:0;transform:translateY(4px);transition:opacity .2s ease,transform .2s ease;pointer-events:none;z-index:2;}" +
+    ".pip-flash.show{opacity:1;transform:translateY(0);}";
 
   var pipWin = null;
   var pipEls = null;
+  var pipRemindType = null;
+  var pipFlashTimer = null;
 
   function syncPip() {
     if (!pipWin || !pipEls) return;
@@ -2778,21 +2824,47 @@
     pipEls.label.textContent = $("countdownLabel").textContent;
     pipEls.pct.textContent = $("overallPct").textContent + "%";
     pipEls.fill.style.width = $("progressBar").style.width || "0%";
+    pipEls.dnd.textContent = cfg.dnd ? "🔕" : "🔔";
   }
 
-  var pipToastTimer = null;
+  function applyPipBg() {
+    if (!pipWin) return;
+    var base = cfg.pipBg || "#0d1016";
+    var body = pipWin.document.body;
+    if (cfg.pipBgUrl) {
+      body.style.background =
+        'linear-gradient(rgba(6,8,12,.4), rgba(6,8,12,.62)), url("' + cfg.pipBgUrl + '") center/cover no-repeat, ' + base;
+    } else {
+      body.style.background = base;
+    }
+  }
 
-  function pipToast(message, icon) {
+  function pipRemind(type, message, icon) {
     if (!pipWin || cfg.dnd) return;
-    var el = pipWin.document.getElementById("pipToast");
+    var d = pipWin.document;
+    var el = d.getElementById("pipRemind");
     if (!el) return;
-    pipWin.document.getElementById("pipToastIcon").textContent = icon || "🔔";
-    pipWin.document.getElementById("pipToastText").textContent = message;
+    pipRemindType = type;
+    d.getElementById("pipRemindIcon").textContent = icon || "🔔";
+    d.getElementById("pipRemindText").textContent = message;
     el.classList.add("show");
-    if (pipToastTimer) clearTimeout(pipToastTimer);
-    pipToastTimer = setTimeout(function () {
-      el.classList.remove("show");
-    }, 5000);
+  }
+
+  function hidePipRemind() {
+    pipRemindType = null;
+    if (!pipWin) return;
+    var el = pipWin.document.getElementById("pipRemind");
+    if (el) el.classList.remove("show");
+  }
+
+  function pipFlash(message) {
+    if (!pipWin) return;
+    var el = pipWin.document.getElementById("pipFlash");
+    if (!el) return;
+    el.textContent = message;
+    el.classList.add("show");
+    if (pipFlashTimer) clearTimeout(pipFlashTimer);
+    pipFlashTimer = setTimeout(function () { el.classList.remove("show"); }, 1800);
   }
 
   $("miniPip").addEventListener("click", function () {
@@ -2809,27 +2881,57 @@
       toast("屏幕悬浮小窗需要 Chrome / Edge 浏览器（Safari 不支持）", "⛶", true);
       return;
     }
-    documentPictureInPicture.requestWindow({ width: 264, height: 172 }).then(function (w) {
+    documentPictureInPicture.requestWindow({ width: 264, height: 200 }).then(function (w) {
       pipWin = w;
       w.document.title = "牛马续航";
       var st = w.document.createElement("style");
       st.textContent = PIP_CSS;
       w.document.head.appendChild(st);
-      w.document.body.innerHTML =
+      var pd = w.document;
+      pd.body.innerHTML =
         '<div class="pip">' +
-        '<div class="pip-toast" id="pipToast"><span id="pipToastIcon"></span><span id="pipToastText"></span></div>' +
-        '<div class="pip-head"><span class="pip-status" id="pipStatus">上班中</span><span>牛马续航</span></div>' +
+        '<div class="pip-top">' +
+        '<span class="pip-status" id="pipStatus">上班中</span>' +
+        '<span class="pip-name">牛马续航</span>' +
+        '<span class="pip-actions">' +
+        '<button class="pip-btn" id="pipDnd" title="勿扰模式">🔔</button>' +
+        '<button class="pip-btn" id="pipMerit" title="攒功德 +1">🧘</button>' +
+        "</span>" +
+        "</div>" +
         '<div class="pip-label" id="pipLabel">距离下班还有</div>' +
         '<div class="pip-time" id="pipTime">00:00:00</div>' +
         '<div class="pip-meta"><span>今日进度</span><span class="pip-pct" id="pipPct">0%</span><i class="pip-track"><em class="pip-fill" id="pipFill"></em></i></div>' +
+        '<div class="pip-remind" id="pipRemind"><span class="pip-remind-text"><span id="pipRemindIcon">💧</span><span id="pipRemindText"></span></span><button class="pip-remind-btn" id="pipRemindDone">已完成</button><button class="pip-remind-btn skip" id="pipRemindSkip">忽略</button></div>' +
+        '<div class="pip-flash" id="pipFlash"></div>' +
         "</div>";
+      pd.getElementById("pipDnd").addEventListener("click", function () {
+        cfg.dnd = !cfg.dnd;
+        saveConfig();
+        updateDndControl();
+        if (cfg.dnd) hidePipRemind();
+        syncPip();
+      });
+      pd.getElementById("pipMerit").addEventListener("click", function () {
+        doMerit();
+        pipFlash("🧘 功德 +1");
+      });
+      pd.getElementById("pipRemindDone").addEventListener("click", function () {
+        var t = pipRemindType;
+        hidePipRemind();
+        if (t === "water") doWater();
+        else if (t === "stand") doStand();
+        else if (t === "toilet") doToilet();
+      });
+      pd.getElementById("pipRemindSkip").addEventListener("click", hidePipRemind);
       pipEls = {
-        time: w.document.getElementById("pipTime"),
-        status: w.document.getElementById("pipStatus"),
-        label: w.document.getElementById("pipLabel"),
-        pct: w.document.getElementById("pipPct"),
-        fill: w.document.getElementById("pipFill")
+        time: pd.getElementById("pipTime"),
+        status: pd.getElementById("pipStatus"),
+        label: pd.getElementById("pipLabel"),
+        pct: pd.getElementById("pipPct"),
+        fill: pd.getElementById("pipFill"),
+        dnd: pd.getElementById("pipDnd")
       };
+      applyPipBg();
       syncPip();
       $("miniPip").classList.add("pip-on");
       try { sessionStorage.setItem("niuxu-pip-open", "1"); } catch (e) {}
@@ -2863,7 +2965,7 @@
   });
   updateDndControl();
 
-  $("meritAdd").addEventListener("click", function () {
+  function doMerit() {
     today.merit += 1;
     saveToday();
     renderHabits();
@@ -2878,16 +2980,18 @@
 
     toast(MERIT_LINES[Math.floor(Math.random() * MERIT_LINES.length)], "🧘");
     playSound("muyu");
-  });
+  }
+  $("meritAdd").addEventListener("click", doMerit);
 
-  $("toiletAdd").addEventListener("click", function () {
+  function doToilet() {
     today.toiletCount += 1;
     today.toiletLast = Date.now();
     saveToday();
     renderHabits();
     toast("带薪拉粑 +1，摸鱼 " + TOILET_MINUTES + " 分钟", "🚽");
     playSound(cfg.soundToilet);
-  });
+  }
+  $("toiletAdd").addEventListener("click", doToilet);
 
   document.querySelectorAll("#moodGrid .mood").forEach(function (btn) {
     // 阻止点击时输入框先失焦，避免备注被提前提交成另一条记录
@@ -3085,19 +3189,19 @@
       checkReminder("waterLast", cfg.waterInterval, function () {
         flashCard("waterCard");
         toast("该喝水了，起身接杯水吧", "💧");
-        pipToast("该喝水了，起身接杯水吧", "💧");
+        pipRemind("water", "该喝水了，起身接杯水吧", "💧");
         playSound(cfg.soundWater);
       });
       checkReminder("standLast", cfg.standInterval, function () {
         flashCard("standCard");
         toast("坐了 " + cfg.standInterval + " 分钟了，起来活动下", "🧍");
-        pipToast("坐了 " + cfg.standInterval + " 分钟了，起来活动下", "🧍");
+        pipRemind("stand", "坐了 " + cfg.standInterval + " 分钟了，起来活动下", "🧍");
         playSound(cfg.soundStand);
       });
       checkReminder("toiletLast", cfg.toiletInterval, function () {
         flashCard("toiletCard");
         toast("该去趟洗手间了，顺便走走", "🚽");
-        pipToast("该去趟洗手间了，顺便走走", "🚽");
+        pipRemind("toilet", "该去趟洗手间了，顺便走走", "🚽");
         playSound(cfg.soundToilet);
       });
       saveToday();
