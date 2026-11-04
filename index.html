@@ -2756,7 +2756,9 @@
   var PIP_CSS =
     "html,body{margin:0;background:#0d1016;color:#e9edf5;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;}" +
     "body{display:flex;align-items:center;justify-content:center;min-height:100vh;}" +
-    ".pip{width:100%;box-sizing:border-box;padding:13px 15px;}" +
+    ".pip{position:relative;width:100%;box-sizing:border-box;padding:13px 15px;}" +
+    ".pip-toast{position:absolute;left:10px;right:10px;top:9px;display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:10px;background:rgba(61,220,151,.18);border:1px solid rgba(61,220,151,.42);color:#e9edf5;font-size:12px;box-shadow:0 10px 26px -12px rgba(0,0,0,.9);opacity:0;transform:translateY(-6px);transition:opacity .22s ease,transform .22s ease;pointer-events:none;}" +
+    ".pip-toast.show{opacity:1;transform:translateY(0);}" +
     ".pip-head{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#8b93a7;margin-bottom:2px;}" +
     ".pip-status{color:#3ddc97;}" +
     ".pip-label{font-size:11.5px;color:#8b93a7;}" +
@@ -2776,6 +2778,21 @@
     pipEls.label.textContent = $("countdownLabel").textContent;
     pipEls.pct.textContent = $("overallPct").textContent + "%";
     pipEls.fill.style.width = $("progressBar").style.width || "0%";
+  }
+
+  var pipToastTimer = null;
+
+  function pipToast(message, icon) {
+    if (!pipWin || cfg.dnd) return;
+    var el = pipWin.document.getElementById("pipToast");
+    if (!el) return;
+    pipWin.document.getElementById("pipToastIcon").textContent = icon || "🔔";
+    pipWin.document.getElementById("pipToastText").textContent = message;
+    el.classList.add("show");
+    if (pipToastTimer) clearTimeout(pipToastTimer);
+    pipToastTimer = setTimeout(function () {
+      el.classList.remove("show");
+    }, 5000);
   }
 
   $("miniPip").addEventListener("click", function () {
@@ -2800,6 +2817,7 @@
       w.document.head.appendChild(st);
       w.document.body.innerHTML =
         '<div class="pip">' +
+        '<div class="pip-toast" id="pipToast"><span id="pipToastIcon"></span><span id="pipToastText"></span></div>' +
         '<div class="pip-head"><span class="pip-status" id="pipStatus">上班中</span><span>牛马续航</span></div>' +
         '<div class="pip-label" id="pipLabel">距离下班还有</div>' +
         '<div class="pip-time" id="pipTime">00:00:00</div>' +
@@ -3067,16 +3085,19 @@
       checkReminder("waterLast", cfg.waterInterval, function () {
         flashCard("waterCard");
         toast("该喝水了，起身接杯水吧", "💧");
+        pipToast("该喝水了，起身接杯水吧", "💧");
         playSound(cfg.soundWater);
       });
       checkReminder("standLast", cfg.standInterval, function () {
         flashCard("standCard");
         toast("坐了 " + cfg.standInterval + " 分钟了，起来活动下", "🧍");
+        pipToast("坐了 " + cfg.standInterval + " 分钟了，起来活动下", "🧍");
         playSound(cfg.soundStand);
       });
       checkReminder("toiletLast", cfg.toiletInterval, function () {
         flashCard("toiletCard");
         toast("该去趟洗手间了，顺便走走", "🚽");
+        pipToast("该去趟洗手间了，顺便走走", "🚽");
         playSound(cfg.soundToilet);
       });
       saveToday();
