@@ -3092,14 +3092,61 @@
     }).then(function (data) {
       if (desktopOnline !== true) {
         desktopOnline = true;
+        desktopWaitUnsupported = false; // App 可能刚升级过，重新试一次长轮询
         toast("桌面透明小窗已连上，看屏幕右上角", "🪟", true);
       }
-      if (data && data.action) applyDesktopAction(data.action);
+      applyDesktopReply(data);
+      startDesktopWait();
       scheduleDesktopSync(2000);
     }).catch(function () {
       if (desktopOnline !== false) desktopOnline = false;
       scheduleDesktopSync(12000);
     });
+  }
+
+  function applyDesktopReply(data) {
+    if (!data) return;
+    var list = Array.isArray(data.actions) ? data.actions : (data.action ? [data.action] : []);
+    list.forEach(applyDesktopAction);
+    return list.length;
+  }
+
+  /* 立刻推一次状态（不排定时器），小窗里点完操作后马上把新数字同步回去 */
+  function pushDesktopStateNow() {
+    var payload;
+    try { payload = JSON.stringify(desktopState()); } catch (e) { return; }
+    fetch(DESKTOP_SYNC_URL + "/state", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: payload,
+      cache: "no-store"
+    }).then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) { if (applyDesktopReply(data)) pushDesktopStateNow(); })
+      .catch(function () {});
+  }
+
+  /* 长轮询：标签页在后台时浏览器会把定时器节流到一分钟一次，
+     但挂着的请求一返回回调就会执行，小窗里点的功德 / 已完成能立刻生效 */
+  var desktopWaiting = false;
+  var desktopWaitUnsupported = false;
+  function startDesktopWait() {
+    if (desktopWaiting || desktopWaitUnsupported || !window.fetch) return;
+    desktopWaiting = true;
+    fetch(DESKTOP_SYNC_URL + "/wait?source=" + encodeURIComponent(desktopSourceId), { cache: "no-store" })
+      .then(function (res) {
+        if (res.status === 404) desktopWaitUnsupported = true;
+        if (!res.ok) throw new Error("no wait endpoint");
+        return res.json();
+      })
+      .then(function (data) {
+        desktopWaiting = false;
+        if (applyDesktopReply(data)) pushDesktopStateNow();
+        startDesktopWait();
+      })
+      .catch(function () {
+        desktopWaiting = false;
+        // App 关了或是老版本 App（没有 /wait），等下一次 /state 成功时再接上
+      });
   }
 
   function scheduleDesktopSync(delay) {

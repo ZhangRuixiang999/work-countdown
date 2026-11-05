@@ -280,7 +280,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let focused = state["focused"] as? Bool ?? false
         let now = Date().timeIntervalSince1970
         if let active = activeSourceId, sourceId != active {
-            let stale = now - lastStateAt > 5
+            // 后台标签页的定时器会被浏览器节流，但只要它还挂着长轮询就算活着，不让别的标签页抢走
+            let stale = now - lastStateAt > 5 && !(server?.isWaiting(active) ?? false)
             let promoteFromLegacy = active == "legacy" && sourceId != "legacy"
             let focusSwitch = focused && !activeSourceFocused
             if !(stale || promoteFromLegacy || focusSwitch) { return }
@@ -473,9 +474,13 @@ final class SyncServer {
     private let onToggle: () -> Bool
     private let queue = DispatchQueue(label: "com.niuxu.mini.sync")
     private var listener: NWListener?
-    private var pendingAction: String?
-    private var pendingActionSource: String?
+    /// 待网页执行的操作队列（按顺序，连点几次功德就排几条，不会互相覆盖）
+    private var pendingActions: [(action: String, source: String?)] = []
+    /// 网页挂着的长轮询连接（GET /wait），有新操作时立刻回复，不用等网页的 2 秒定时器
+    private var waiters: [(source: String, connection: NWConnection, id: Int)] = []
+    private var nextWaiterId = 0
     private let actionLock = NSLock()
+    private var waitingSources = Set<String>()
     /// 打包进 App 的网页（Contents/Resources/index.html）
     private let pageData: Data? = Bundle.main.url(forResource: "index", withExtension: "html")
         .flatMap { try? Data(contentsOf: $0) }
@@ -493,20 +498,83 @@ final class SyncServer {
     }
 
     func setPendingAction(_ action: String, source: String?) {
+        queue.async {
+            // 提醒类操作（喝水 / 起身 / 拉粑）同类型只留最新一条；功德每次都要算
+            if action != "merit_add" {
+                let type = action.components(separatedBy: "_").first ?? action
+                self.pendingActions.removeAll { $0.action.hasPrefix(type + "_") && $0.action != "merit_add" }
+            }
+            self.pendingActions.append((action, source))
+            self.flushWaiters()
+        }
+    }
+
+    /// 某个标签页是否正挂着长轮询（说明它还活着，只是定时器被浏览器节流了）
+    func isWaiting(_ source: String) -> Bool {
         actionLock.lock()
-        pendingAction = action
-        pendingActionSource = source
+        defer { actionLock.unlock() }
+        return waitingSources.contains(source)
+    }
+
+    private func updateWaitingSources() {
+        let set = Set(waiters.map { $0.source })
+        actionLock.lock()
+        waitingSources = set
         actionLock.unlock()
     }
 
-    private func takePendingAction(sourceId: String) -> String? {
-        actionLock.lock()
-        defer { actionLock.unlock() }
-        guard let action = pendingAction else { return nil }
-        if let source = pendingActionSource, !source.isEmpty, source != sourceId { return nil }
-        pendingAction = nil
-        pendingActionSource = nil
-        return action
+    /// 只在 queue 上调用
+    private func takePendingActions(sourceId: String) -> [String] {
+        var taken: [String] = []
+        pendingActions.removeAll { item in
+            if let source = item.source, !source.isEmpty, source != sourceId { return false }
+            taken.append(item.action)
+            return true
+        }
+        return taken
+    }
+
+    /// 只在 queue 上调用
+    private func flushWaiters() {
+        var remaining: [(source: String, connection: NWConnection, id: Int)] = []
+        for waiter in waiters {
+            let actions = takePendingActions(sourceId: waiter.source)
+            if actions.isEmpty {
+                remaining.append(waiter)
+            } else {
+                sendJSON(waiter.connection, status: "200 OK", object: ["ok": true, "actions": actions])
+            }
+        }
+        waiters = remaining
+        updateWaitingSources()
+    }
+
+    private func addWaiter(_ connection: NWConnection, source: String) {
+        let actions = takePendingActions(sourceId: source)
+        if !actions.isEmpty {
+            sendJSON(connection, status: "200 OK", object: ["ok": true, "actions": actions])
+            return
+        }
+        // 同一个标签页只保留最新一条长轮询
+        for old in waiters where old.source == source {
+            sendJSON(old.connection, status: "200 OK", object: ["ok": true, "actions": []])
+        }
+        waiters.removeAll { $0.source == source }
+        nextWaiterId += 1
+        let id = nextWaiterId
+        waiters.append((source, connection, id))
+        updateWaitingSources()
+        queue.asyncAfter(deadline: .now() + 20) { [weak self] in
+            guard let self = self, let index = self.waiters.firstIndex(where: { $0.id == id }) else { return }
+            let waiter = self.waiters.remove(at: index)
+            self.updateWaitingSources()
+            self.sendJSON(waiter.connection, status: "200 OK", object: ["ok": true, "actions": []])
+        }
+    }
+
+    private func sendJSON(_ connection: NWConnection, status: String, object: [String: Any]) {
+        let payload = (try? JSONSerialization.data(withJSONObject: object)) ?? Data("{\"ok\":false}".utf8)
+        send(connection, status: status, contentType: "application/json", payload: payload)
     }
 
     func start() {
@@ -607,12 +675,26 @@ final class SyncServer {
             payload = Data("{\"ok\":true,\"visible\":\(visible ? "true" : "false")}".utf8)
         } else if method == "GET" && path == "/ping" {
             payload = Data("{\"ok\":true,\"app\":\"niuxu-mini\"}".utf8)
+        } else if method == "GET" && path == "/wait" {
+            // 长轮询：连接先挂着，有操作或 20 秒到了再回复
+            let query = rawPath.split(separator: "?", maxSplits: 1).dropFirst().first.map(String.init) ?? ""
+            var source = "legacy"
+            for pair in query.split(separator: "&") {
+                let kv = pair.split(separator: "=", maxSplits: 1)
+                if kv.count == 2, kv[0] == "source" {
+                    source = String(kv[1]).removingPercentEncoding ?? String(kv[1])
+                }
+            }
+            addWaiter(connection, source: source)
+            return
         } else if method == "POST" && path == "/state" {
             if let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] {
                 DispatchQueue.main.async { self.onState(object) }
                 let sourceId = object["sourceId"] as? String ?? "legacy"
-                if let action = takePendingAction(sourceId: sourceId) {
-                    let reply: [String: Any] = ["ok": true, "action": action]
+                let actions = takePendingActions(sourceId: sourceId)
+                if !actions.isEmpty {
+                    // actions 给新版网页；action 兼容还没刷新的老网页（只认一条）
+                    let reply: [String: Any] = ["ok": true, "actions": actions, "action": actions[0]]
                     if let data = try? JSONSerialization.data(withJSONObject: reply) {
                         payload = data
                     }
@@ -626,6 +708,10 @@ final class SyncServer {
             payload = Data("{\"ok\":false}".utf8)
         }
 
+        send(connection, status: status, contentType: contentType, payload: payload)
+    }
+
+    private func send(_ connection: NWConnection, status: String, contentType: String, payload: Data) {
         let headers = [
             "HTTP/1.1 \(status)",
             "Content-Type: \(contentType)",
