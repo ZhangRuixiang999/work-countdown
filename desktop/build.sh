@@ -11,6 +11,9 @@ trap 'rm -rf "$TMP"' EXIT
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp Info.plist "$APP/Contents/Info.plist"
+# 把网页打包进 App：App 会在 http://127.0.0.1:47821/ 托管它，浏览器同源访问，不会被拦
+mkdir -p "$APP/Contents/Resources"
+cp ../index.html "$APP/Contents/Resources/index.html"
 
 echo "编译 arm64…"
 swiftc -O -target arm64-apple-macos12 -framework Cocoa -framework WebKit -framework Network main.swift -o "$TMP/$BIN-arm64"

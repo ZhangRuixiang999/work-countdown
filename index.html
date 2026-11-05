@@ -2803,7 +2803,7 @@
       var on = document.body.classList.toggle("mini");
       btn.setAttribute("aria-label", on ? "退出迷你模式" : "迷你模式");
       btn.title = on ? "回到完整页面" : "投到桌面透明小窗（先双击 desktop/牛马续航小窗.app）";
-      if (on) toast("没连上桌面小窗 App，先用页面小卡片；双击 牛马续航小窗.app 后再点 📌", "📌", true);
+      if (on) toast("没连上桌面小窗 App，先用页面小卡片。已装 App 的话，从菜单栏沙漏 →「打开牛马续航网页」进本机版再点 📌", "📌", true);
     };
     fetch(DESKTOP_SYNC_URL + "/toggle", { method: "GET", cache: "no-store" })
       .then(function (r) { if (!r.ok) throw new Error("bad status"); return r.json(); })
@@ -3012,7 +3012,11 @@
 
   /* ---------- 桌面透明小窗同步（只走本机回环 127.0.0.1，不上传） ---------- */
 
-  var DESKTOP_SYNC_URL = "http://127.0.0.1:47821";
+  var DESKTOP_SYNC_PORT = "47821";
+  // 由桌面 App 托管打开（http://127.0.0.1:47821/）时直接走同源，Safari / Chrome 都不会拦
+  var DESKTOP_SYNC_URL = (location.protocol === "http:" && location.port === DESKTOP_SYNC_PORT)
+    ? location.origin
+    : "http://127.0.0.1:" + DESKTOP_SYNC_PORT;
   var desktopSourceId = "tab" + Math.random().toString(36).slice(2, 8);
   var desktopAlert = null;
   var desktopOnline = null;

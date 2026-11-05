@@ -3,8 +3,12 @@ import WebKit
 import Network
 
 let appName = "牛马续航小窗"
-let liveURL = "https://zhangruixiang999.github.io/work-countdown/"
 let syncPort: UInt16 = 47821
+/// 线上 GitHub Pages 版（https）。Safari 会把它对 http://127.0.0.1 的请求当成「混合内容」直接拦掉，
+/// Chrome 142+ 也要用户点「允许访问本地网络」，所以别的电脑上经常同步不上。
+let liveURL = "https://zhangruixiang999.github.io/work-countdown/"
+/// App 自己在本机端口上托管一份网页：网页和同步接口同源，任何浏览器都不会拦，也不依赖能不能访问 GitHub。
+let localURL = "http://127.0.0.1:\(syncPort)/"
 
 let cardMargin: CGFloat = 14
 let fullCardSize = NSSize(width: 320, height: 206)
@@ -96,7 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         // 第一次装上时如果一直没同步，就自动把网页打开（只做一次）
         Timer.scheduledTimer(withTimeInterval: 6.0, repeats: false) { [weak self] _ in
             guard let self = self, !self.hasState else { return }
-            let key = "autoOpenedWebPage"
+            // 换了新 key：老版本用户升级后也会自动打开一次本机版网页
+            let key = "autoOpenedLocalPage"
             guard !UserDefaults.standard.bool(forKey: key) else { return }
             UserDefaults.standard.set(true, forKey: key)
             self.openWebApp()
@@ -440,7 +445,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
 
     @objc private func openWebApp() {
-        guard let url = URL(string: liveURL) else { return }
+        // 本机托管的网页可用就开本机版；万一端口没起来（比如被老版本占着），退回线上版
+        let target = server?.canServePage == true ? localURL : liveURL
+        guard let url = URL(string: target) else { return }
         NSWorkspace.shared.open(url)
     }
 
@@ -469,6 +476,11 @@ final class SyncServer {
     private var pendingAction: String?
     private var pendingActionSource: String?
     private let actionLock = NSLock()
+    /// 打包进 App 的网页（Contents/Resources/index.html）
+    private let pageData: Data? = Bundle.main.url(forResource: "index", withExtension: "html")
+        .flatMap { try? Data(contentsOf: $0) }
+    private(set) var isListening = false
+    var canServePage: Bool { isListening && pageData != nil }
 
     init(port: UInt16,
          onState: @escaping ([String: Any]) -> Void,
@@ -504,9 +516,15 @@ final class SyncServer {
         do {
             let listener = try NWListener(using: parameters)
             listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
-            listener.stateUpdateHandler = { state in
-                if case .failed(let error) = state {
+            listener.stateUpdateHandler = { [weak self] state in
+                switch state {
+                case .ready:
+                    DispatchQueue.main.async { self?.isListening = true }
+                case .failed(let error):
+                    DispatchQueue.main.async { self?.isListening = false }
                     print("[niuxu] sync listener failed: \(error)")
+                default:
+                    break
                 }
             }
             listener.start(queue: queue)
@@ -563,20 +581,31 @@ final class SyncServer {
     private func respond(_ connection: NWConnection, requestLine: String, body: Data) {
         let parts = requestLine.split(separator: " ")
         let method = parts.count > 0 ? String(parts[0]) : ""
-        let path = parts.count > 1 ? String(parts[1]) : "/"
+        let rawPath = parts.count > 1 ? String(parts[1]) : "/"
+        let path = String(rawPath.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first ?? "/")
         var status = "200 OK"
         var payload = Data("{\"ok\":true}".utf8)
+        var contentType = "application/json"
 
         if method == "OPTIONS" {
             status = "204 No Content"
             payload = Data()
+        } else if method == "GET" && (path == "/" || path == "/index.html") {
+            if let page = pageData {
+                payload = page
+                contentType = "text/html; charset=utf-8"
+            } else {
+                status = "404 Not Found"
+                payload = Data("<meta charset=utf-8>App 里没有打包网页，请重新运行 build.sh".utf8)
+                contentType = "text/html; charset=utf-8"
+            }
         } else if method == "GET" && path == "/show" {
             DispatchQueue.main.async { self.onShow() }
             payload = Data("{\"ok\":true,\"visible\":true}".utf8)
         } else if method == "GET" && path == "/toggle" {
             let visible = DispatchQueue.main.sync { self.onToggle() }
             payload = Data("{\"ok\":true,\"visible\":\(visible ? "true" : "false")}".utf8)
-        } else if method == "GET" && (path == "/ping" || path == "/") {
+        } else if method == "GET" && path == "/ping" {
             payload = Data("{\"ok\":true,\"app\":\"niuxu-mini\"}".utf8)
         } else if method == "POST" && path == "/state" {
             if let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] {
@@ -599,7 +628,8 @@ final class SyncServer {
 
         let headers = [
             "HTTP/1.1 \(status)",
-            "Content-Type: application/json",
+            "Content-Type: \(contentType)",
+            "Cache-Control: no-store",
             "Access-Control-Allow-Origin: *",
             "Access-Control-Allow-Methods: GET, POST, OPTIONS",
             "Access-Control-Allow-Headers: content-type",
