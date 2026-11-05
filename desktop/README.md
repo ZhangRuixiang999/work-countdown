@@ -79,9 +79,15 @@ cd desktop
 
 会重新编译通用二进制，并生成可直接发送的 `牛马续航小窗-mac.zip`（约 120KB）。解压后是一层「牛马续航小窗」文件夹，里面有 `.app` 和 `安装说明.txt`。
 
-对方安装只需要三步：解压 → 拖进「应用程序」→ **右键 → 打开**（第一次必须右键，因为只做了个人签名 `adhoc`，没有 Apple 公证）。
+对方安装推荐用终端一键装（脚本是仓库里的 `download/install.sh`）：
 
-如果对方还是遇到「已损坏，无法打开」，让他跑一句：
+```bash
+curl -fsSL https://zhangruixiang999.github.io/work-countdown/download/install.sh | bash
+```
+
+为什么：App 只有个人签名（`adhoc`），没有 Apple 公证。浏览器下载的文件带「来自互联网」标记，macOS 15 起 Gatekeeper 直接拦，「右键 → 打开」也不再能绕过；App 起不来，`127.0.0.1:47821` 的网页自然也打不开。`curl` 下载不会带这个标记。
+
+如果对方已经用浏览器下了 zip，解压拖进「应用程序」后跑一句：
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/牛马续航小窗.app"

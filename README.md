@@ -9,7 +9,7 @@
 - **下面七张卡**：第一行「此刻心情、心愿清单、近期盼头、牛马关怀」，第二行「蓄谋寻坑、今日功德、最近的数据」。
 - **设置**收在右上角齿轮里，从右侧滑出，点遮罩、✕ 或按 Esc 关闭。
 - **迷你模式**：点标题栏的 📌 按钮，整页缩成屏幕右下角的小卡片，只显示状态、倒计时和今日进度，方便放屏幕一角随时瞄一眼；点小卡右上角的 ✕ 还原。
-- **桌面透明小窗**：真正的透明悬浮窗（数字直接浮在壁纸上，无边框、无白底），用 `desktop/` 里的 macOS 小 App，见 [desktop/README.md](desktop/README.md)。要发给别人，跑 `desktop/package.sh` 生成 `牛马续航小窗-mac.zip`（通用二进制，附安装说明）。现成的安装包：[下载](download/niuxu-mini-mac.zip)（macOS 12+，Apple 芯片 / Intel 都能跑，第一次要右键 → 打开）。
+- **桌面透明小窗**：真正的透明悬浮窗（数字直接浮在壁纸上，无边框、无白底），用 `desktop/` 里的 macOS 小 App，见 [desktop/README.md](desktop/README.md)。要发给别人，跑 `desktop/package.sh` 生成 `牛马续航小窗-mac.zip`（通用二进制，附安装说明）。现成的安装包：[下载](download/niuxu-mini-mac.zip)（macOS 12+，Apple 芯片 / Intel 都能跑）。**推荐让对方用终端一键安装**（浏览器下载的会被 macOS 15+ 的 Gatekeeper 拦住）：`curl -fsSL https://zhangruixiang999.github.io/work-countdown/download/install.sh | bash`
 - **勿扰模式**：点标题栏的 🔔 按钮，关闭所有提示弹窗、提醒闪烁和提示音（图标变成 🔕 表示已开启），再点一下恢复。
 
 ## 打卡与工时
