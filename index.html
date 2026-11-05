@@ -2827,17 +2827,22 @@
     $("dndToggle").title = cfg.dnd ? "勿扰已开启，点我恢复提示" : "勿扰模式：关闭所有提示和声音";
     $("dndToggle").classList.toggle("dnd-on", !!cfg.dnd);
   }
-  $("dndToggle").addEventListener("click", function () {
-    cfg.dnd = !cfg.dnd;
+  function setDnd(on, fromDesktop) {
+    on = !!on;
+    if (!!cfg.dnd === on) { updateDndControl(); return; }
+    cfg.dnd = on;
     saveConfig();
     updateDndControl();
-    if (cfg.dnd) {
+    if (on) {
+      clearDesktopAlert();
       $("toastWrap").textContent = "";
-      toast("勿扰模式已开启，提示和声音都关了", "🔕", true);
+      toast(fromDesktop ? "小窗里开了勿扰，提示和声音都关了" : "勿扰模式已开启，提示和声音都关了", "🔕", true);
     } else {
-      toast("提示已恢复", "🔔");
+      toast(fromDesktop ? "小窗里关了勿扰，提示已恢复" : "提示已恢复", "🔔");
     }
-  });
+    if (typeof pushDesktopStateNow === "function" && desktopOnline) pushDesktopStateNow();
+  }
+  $("dndToggle").addEventListener("click", function () { setDnd(!cfg.dnd); });
   updateDndControl();
 
   function doMerit() {
@@ -3048,6 +3053,7 @@
       shiftStart: r.shiftStart == null ? null : base + r.shiftStart * 1000,
       shiftEnd: r.shiftEnd == null ? null : base + r.shiftEnd * 1000,
       statusKind: r.status || "",
+      dnd: !!cfg.dnd,
       alert: desktopAlert
     };
   }
@@ -3064,6 +3070,10 @@
   function applyDesktopAction(action) {
     var parts = String(action || "").split("_");
     var type = parts[0];
+    if (type === "dnd") {
+      setDnd(parts[1] === "on", true);
+      return;
+    }
     if (parts[1] === "done") {
       if (type === "water") doWater();
       else if (type === "stand") doStand();

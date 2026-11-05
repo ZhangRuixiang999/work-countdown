@@ -79,6 +79,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var activeSourceId: String?
     private var activeSourceFocused = false
     private var lastStateAt: TimeInterval = 0
+    private var dndItem: NSMenuItem!
+    private var isDnd = false
+    /// 在小窗里刚切了勿扰，网页还没执行前先以本地为准，免得旧状态把开关弹回去
+    private var dndOverride: (value: Bool, until: TimeInterval)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -163,6 +167,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         glassItem.target = self
         glassItem.state = .off
         statusMenu.addItem(glassItem)
+
+        dndItem = NSMenuItem(title: "勿扰模式（不弹提醒）", action: #selector(toggleDnd), keyEquivalent: "")
+        dndItem.target = self
+        dndItem.state = .off
+        statusMenu.addItem(dndItem)
 
         throughItem = NSMenuItem(title: "鼠标穿透", action: #selector(toggleThrough), keyEquivalent: "")
         throughItem.target = self
@@ -283,17 +292,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             // 后台标签页的定时器会被浏览器节流，但只要它还挂着长轮询就算活着，不让别的标签页抢走
             let stale = now - lastStateAt > 5 && !(server?.isWaiting(active) ?? false)
             let promoteFromLegacy = active == "legacy" && sourceId != "legacy"
+            // 没刷新的老网页（不支持长轮询）让位给新网页，不然小窗里的点击会发给老网页
+            let promoteToWaiting = !(server?.isWaiting(active) ?? false) && (server?.isWaiting(sourceId) ?? false)
             let focusSwitch = focused && !activeSourceFocused
-            if !(stale || promoteFromLegacy || focusSwitch) { return }
+            if !(stale || promoteFromLegacy || promoteToWaiting || focusSwitch) { return }
         }
         activeSourceId = sourceId
         activeSourceFocused = focused
         lastStateAt = now
 
         var state = state
+        // 勿扰：网页还没执行小窗发出的开关前，先用本地值
+        let incomingDnd = state["dnd"] as? Bool ?? false
+        if let override = dndOverride {
+            if incomingDnd == override.value || now >= override.until {
+                dndOverride = nil
+            } else {
+                state["dnd"] = override.value
+            }
+        }
+        setDndLocal(state["dnd"] as? Bool ?? false)
+
         let alert = state["alert"] as? [String: Any]
         let alertType = alert?["type"] as? String
-        var showAlert = alert != nil
+        var showAlert = alert != nil && !isDnd
         if let suppressed = suppressedAlertType {
             if alert == nil {
                 suppressedAlertType = nil
@@ -324,26 +346,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
     private func updateDragArea() {
         guard dragView != nil else { return }
-        // 还没同步过：整张卡除了顶部一条，都留给网页（好点「打开网页版」）
-        if alerting || !hasState {
+        if alerting && isCompact {
+            // 小条上的提醒：右侧两颗按钮（完成 / 忽略）留给网页，左边照样能拖
+            let buttons: CGFloat = 84
+            dragView.frame = NSRect(x: 0, y: 0, width: card.bounds.width - buttons, height: card.bounds.height)
+            dragView.passthroughRect = .zero
+            shadowView.layer?.shadowOpacity = 0.28
+        } else if alerting || (!hasState && !isCompact) {
+            // 还没同步过：整张卡除了顶部一条，都留给网页（好点「打开网页版」）
             let strip: CGFloat = 34
             dragView.frame = NSRect(x: 0, y: card.bounds.height - strip,
                                     width: card.bounds.width, height: strip)
             dragView.passthroughRect = .zero
             shadowView.layer?.shadowOpacity = alerting || isGlass ? 0.28 : 0
+        } else if isCompact {
+            dragView.frame = card.bounds
+            dragView.passthroughRect = .zero
+            shadowView.layer?.shadowOpacity = isGlass ? 0.28 : 0
         } else {
             dragView.frame = card.bounds
-            // 右上角两颗按钮（功德 / 打开网页）交给网页自己处理点击
-            dragView.passthroughRect = NSRect(x: card.bounds.width - 76,
+            // 右上角三颗按钮（勿扰 / 功德 / 打开网页）交给网页自己处理点击
+            let opsWidth: CGFloat = 104
+            dragView.passthroughRect = NSRect(x: card.bounds.width - opsWidth,
                                               y: card.bounds.height - 38,
-                                              width: 76, height: 38)
+                                              width: opsWidth, height: 38)
             shadowView.layer?.shadowOpacity = isGlass ? 0.28 : 0
         }
+    }
+
+    private func setDndLocal(_ on: Bool) {
+        isDnd = on
+        dndItem?.state = on ? .on : .off
+    }
+
+    @objc private func toggleDnd() {
+        handleAction(isDnd ? "dnd_off" : "dnd_on")
     }
 
     private func handleAction(_ action: String) {
         if action == "merit_add" {
             server?.setPendingAction(action, source: activeSourceId)
+            return
+        }
+        if action == "dnd_on" || action == "dnd_off" {
+            let on = action == "dnd_on"
+            setDndLocal(on)
+            dndOverride = (on, Date().timeIntervalSince1970 + 8)
+            server?.setPendingAction(action, source: activeSourceId)
+            if on && alerting {
+                alerting = false
+                updateDragArea()
+            }
+            webView.evaluateJavaScript("setDndMode(\(on));", completionHandler: nil)
             return
         }
         let valid = ["water_done", "stand_done", "toilet_done", "water_skip", "stand_skip", "toilet_skip"]
@@ -846,12 +900,46 @@ let miniHTML = #"""
   .alert-actions .primary { background: #fff; color: #1b1b1b; }
   .alert-actions .ghost { background: rgba(255,255,255,.16); color: #fff; border: 1px solid rgba(255,255,255,.22); }
   body.alerting .wrap { visibility: hidden; }
+
+  /* 勿扰按钮：开启时变暗红底，提醒自己现在不会弹提醒 */
+  .op.dnd-on { background: rgba(255, 99, 99, .32); }
+  body.clear .op.dnd-on { background: rgba(160, 30, 30, .45); }
+  body.unsynced #dndBtn { display: none; }
+  .mini-dnd { display: none; font-size: 12px; line-height: 1; margin-left: 4px; }
+  body.dnd .mini-dnd { display: inline; }
+
+  /* 收起成小条时的提醒：一行排开，左边图标 + 标题 + 一句话，右边两颗圆按钮 */
+  .alert-text { display: contents; }
+  .alert-icon { display: none; }
+  body.compact .alert {
+    flex-direction: row; justify-content: flex-start; text-align: left;
+    padding: 0 10px 0 12px; gap: 8px;
+  }
+  body.compact .alert-pill { display: none; }
+  body.compact .alert-icon { display: block; flex: none; font-size: 18px; line-height: 1; }
+  body.compact .alert-text { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 2px; }
+  body.compact .alert h2 {
+    font-size: 14px; margin: 0; line-height: 1.15;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  body.compact .alert-copy {
+    font-size: 10px; line-height: 1.25; margin: 0; max-width: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  body.compact .alert-actions { width: auto; max-width: none; margin: 0; gap: 6px; flex: none; }
+  body.compact .alert-actions button {
+    flex: none; width: 32px; height: 32px; padding: 0; border-radius: 50%;
+    font-size: 0; display: inline-flex; align-items: center; justify-content: center;
+  }
+  body.compact .alert-actions button::before { font-size: 15px; font-weight: 900; line-height: 1; }
+  body.compact .alert-actions .primary::before { content: "✓"; }
+  body.compact .alert-actions .ghost::before { content: "✕"; font-size: 12px; }
 </style>
 </head>
 <body class="clear">
   <div class="wrap">
     <div class="full">
-      <div class="head"><span class="dot idle" id="dot"></span><span class="head-status" id="status">等待浏览器同步</span><span class="head-ops"><button class="op" id="meritBtn" type="button" title="功德 +1">🧘</button><button class="op" id="webBtn" type="button" title="打开网页版">↗</button></span></div>
+      <div class="head"><span class="dot idle" id="dot"></span><span class="head-status" id="status">等待浏览器同步</span><span class="head-ops"><button class="op" id="dndBtn" type="button" title="勿扰模式：不弹提醒">🔔</button><button class="op" id="meritBtn" type="button" title="功德 +1">🧘</button><button class="op" id="webBtn" type="button" title="打开网页版">↗</button></span></div>
       <div class="label" id="label">距离下班还有</div>
       <div class="count" id="count">--:--:--</div>
       <div class="hint"><button class="hint-btn" id="hintBtn" type="button">打开网页版 →</button></div>
@@ -867,15 +955,19 @@ let miniHTML = #"""
       <span class="dot" id="miniDot"></span>
       <span class="mini-count" id="miniCount">--:--:--</span>
       <span class="mini-pct" id="miniPct">0%</span>
+      <span class="mini-dnd" title="勿扰模式已开启">🔕</span>
     </div>
   </div>
   <div class="alert" id="alert">
     <div class="alert-pill" id="alertPill">牛马续航</div>
-    <h2 id="alertTitle"></h2>
-    <p class="alert-copy" id="alertCopy"></p>
+    <span class="alert-icon" id="alertIcon">🔔</span>
+    <div class="alert-text">
+      <h2 id="alertTitle"></h2>
+      <p class="alert-copy" id="alertCopy"></p>
+    </div>
     <div class="alert-actions">
-      <button class="primary" id="alertPrimary" type="button">已完成</button>
-      <button class="ghost" id="alertSecondary" type="button">忽略</button>
+      <button class="primary" id="alertPrimary" type="button" title="已完成">已完成</button>
+      <button class="ghost" id="alertSecondary" type="button" title="忽略">忽略</button>
     </div>
   </div>
 <script>
@@ -946,6 +1038,15 @@ let miniHTML = #"""
     if (d1) d1.className = 'dot ' + dot;
     var d2 = document.getElementById('miniDot');
     if (d2) d2.className = 'dot ' + dot;
+    var dndOn = !!S.dnd;
+    if (document.body.classList.contains('dnd') !== dndOn) document.body.classList.toggle('dnd', dndOn);
+    var db = document.getElementById('dndBtn');
+    if (db) {
+      var icon = dndOn ? '🔕' : '🔔';
+      if (db.textContent !== icon) db.textContent = icon;
+      db.classList.toggle('dnd-on', dndOn);
+      db.title = dndOn ? '勿扰已开启，点我恢复提醒' : '勿扰模式：不弹提醒';
+    }
   }
 
   var ALERT_TITLES = { water: '该喝水了', stand: '起来动动吧', toilet: '带薪拉粑时间' };
@@ -980,6 +1081,20 @@ let miniHTML = #"""
     webBtn.addEventListener('click', function () { postToApp('miniOpenWeb', 'open'); });
   }
 
+  var dndBtn = document.getElementById('dndBtn');
+  if (dndBtn) {
+    dndBtn.addEventListener('click', function () {
+      // 原生那边会立刻回调 setDndMode，并把开关转给网页执行
+      postToApp('miniAction', S.dnd ? 'dnd_off' : 'dnd_on');
+    });
+  }
+
+  function setDndMode(on) {
+    S.dnd = !!on;
+    if (on) hideAlert();
+    clock();
+  }
+
   var hintBtn = document.getElementById('hintBtn');
   if (hintBtn) {
     hintBtn.addEventListener('click', function () { postToApp('miniOpenWeb', 'open'); });
@@ -993,6 +1108,7 @@ let miniHTML = #"""
     if (!el) return;
     el.className = 'alert show ' + type;
     setText('alertPill', (a.icon || '🔔') + ' 牛马续航');
+    setText('alertIcon', a.icon || '🔔');
     setText('alertTitle', (a.title || ALERT_TITLES[type]));
     setText('alertCopy', a.text || '');
     document.body.classList.add('alerting');
